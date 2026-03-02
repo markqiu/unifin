@@ -18,9 +18,11 @@ import pytest
 # 0. Helpers
 # ──────────────────────────────────────────────────
 
+
 def _akshare_available() -> bool:
     try:
         import akshare  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -29,6 +31,7 @@ def _akshare_available() -> bool:
 def _yfinance_available() -> bool:
     try:
         import yfinance  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -38,26 +41,31 @@ def _yfinance_available() -> bool:
 # 1. Provider & fetcher registration
 # ──────────────────────────────────────────────────
 
+
 class TestAKShareProviderRegistration:
     """AKShare provider should be registered with correct metadata."""
 
     def test_provider_registered(self):
         from unifin.core.registry import provider_registry
+
         assert "akshare" in provider_registry.list_providers()
 
     def test_provider_markets(self):
         from unifin.core.registry import provider_registry
+
         info = provider_registry.get_provider_info("akshare")
         assert "CN" in info.markets
         assert "HK" in info.markets
 
     def test_provider_no_credentials(self):
         from unifin.core.registry import provider_registry
+
         info = provider_registry.get_provider_info("akshare")
         assert info.credentials_env == {}
 
     def test_provider_delay(self):
         from unifin.core.registry import provider_registry
+
         info = provider_registry.get_provider_info("akshare")
         assert info.data_delay == "15min"
 
@@ -67,22 +75,26 @@ class TestYFinanceNewFetcherRegistration:
 
     def test_etf_search_registered(self):
         from unifin.core.registry import provider_registry
+
         providers = list(provider_registry.get_providers_for_model("etf_search").keys())
         assert "yfinance" in providers
 
     def test_trade_calendar_registered(self):
         from unifin.core.registry import provider_registry
+
         providers = list(provider_registry.get_providers_for_model("trade_calendar").keys())
         assert "yfinance" in providers
 
     def test_etf_search_supported_fields(self):
         from unifin.core.registry import provider_registry
+
         fetcher = provider_registry.get_fetcher("etf_search", "yfinance")
         assert "symbol" in fetcher.supported_fields
         assert "name" in fetcher.supported_fields
 
     def test_trade_calendar_supported_fields(self):
         from unifin.core.registry import provider_registry
+
         fetcher = provider_registry.get_fetcher("trade_calendar", "yfinance")
         assert "date" in fetcher.supported_fields
         assert "is_open" in fetcher.supported_fields
@@ -92,33 +104,42 @@ class TestYFinanceNewFetcherRegistration:
 class TestAKShareFetcherRegistration:
     """All 5 akshare fetchers should be registered."""
 
-    @pytest.mark.parametrize("model_name", [
-        "equity_historical",
-        "equity_search",
-        "equity_quote",
-        "etf_search",
-        "trade_calendar",
-    ])
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "equity_historical",
+            "equity_search",
+            "equity_quote",
+            "etf_search",
+            "trade_calendar",
+        ],
+    )
     def test_akshare_registered(self, model_name: str):
         from unifin.core.registry import provider_registry
+
         providers = list(provider_registry.get_providers_for_model(model_name).keys())
         assert "akshare" in providers, f"akshare not registered for '{model_name}'"
 
-    @pytest.mark.parametrize("model_name", [
-        "equity_historical",
-        "equity_search",
-        "equity_quote",
-        "etf_search",
-        "trade_calendar",
-    ])
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "equity_historical",
+            "equity_search",
+            "equity_quote",
+            "etf_search",
+            "trade_calendar",
+        ],
+    )
     def test_akshare_supported_fields(self, model_name: str):
         from unifin.core.registry import provider_registry
+
         fetcher = provider_registry.get_fetcher(model_name, "akshare")
         assert len(fetcher.supported_fields) > 0
 
     def test_akshare_equity_historical_exchanges(self):
         from unifin.core.registry import provider_registry
         from unifin.core.types import Exchange
+
         fetcher = provider_registry.get_fetcher("equity_historical", "akshare")
         assert Exchange.XSHG in fetcher.supported_exchanges
         assert Exchange.XSHE in fetcher.supported_exchanges
@@ -127,6 +148,7 @@ class TestAKShareFetcherRegistration:
     def test_akshare_equity_search_exchanges(self):
         from unifin.core.registry import provider_registry
         from unifin.core.types import Exchange
+
         fetcher = provider_registry.get_fetcher("equity_search", "akshare")
         assert Exchange.XSHG in fetcher.supported_exchanges
         assert Exchange.XSHE in fetcher.supported_exchanges
@@ -135,6 +157,7 @@ class TestAKShareFetcherRegistration:
 # ──────────────────────────────────────────────────
 # 2. YFinance etf_search — transform_query / transform_data
 # ──────────────────────────────────────────────────
+
 
 class TestYFinanceEtfSearchTransform:
     def test_transform_query_basic(self):
@@ -194,6 +217,7 @@ class TestYFinanceEtfSearchTransform:
 # 3. YFinance trade_calendar — transform_query / transform_data
 # ──────────────────────────────────────────────────
 
+
 class TestYFinanceTradeCalendarTransform:
     def test_transform_query_cn(self):
         from unifin.models.trade_calendar import TradeCalendarQuery
@@ -247,6 +271,7 @@ class TestYFinanceTradeCalendarTransform:
 # 4. AKShare equity_historical — transform_query / transform_data
 # ──────────────────────────────────────────────────
 
+
 class TestAKShareEquityHistoricalTransform:
     def test_transform_query_defaults(self):
         from unifin.models.equity_historical import EquityHistoricalQuery
@@ -283,15 +308,17 @@ class TestAKShareEquityHistoricalTransform:
         from unifin.models.equity_historical import EquityHistoricalQuery
         from unifin.providers.akshare.equity_historical import AKShareEquityHistoricalFetcher
 
-        mock_df = pd.DataFrame({
-            "日期": ["2024-01-02", "2024-01-03"],
-            "开盘": [10.5, 10.8],
-            "收盘": [10.8, 11.0],
-            "最高": [11.0, 11.2],
-            "最低": [10.3, 10.7],
-            "成交量": [100000, 120000],
-            "成交额": [1080000.0, 1320000.0],
-        })
+        mock_df = pd.DataFrame(
+            {
+                "日期": ["2024-01-02", "2024-01-03"],
+                "开盘": [10.5, 10.8],
+                "收盘": [10.8, 11.0],
+                "最高": [11.0, 11.2],
+                "最低": [10.3, 10.7],
+                "成交量": [100000, 120000],
+                "成交额": [1080000.0, 1320000.0],
+            }
+        )
         q = EquityHistoricalQuery(symbol="000001.XSHE")
         result = AKShareEquityHistoricalFetcher.transform_data(mock_df, q)
         assert len(result) == 2
@@ -312,6 +339,7 @@ class TestAKShareEquityHistoricalTransform:
 # ──────────────────────────────────────────────────
 # 5. AKShare equity_search — transform_query / transform_data
 # ──────────────────────────────────────────────────
+
 
 class TestAKShareEquitySearchTransform:
     def test_transform_query(self):
@@ -378,6 +406,7 @@ class TestAKShareEquitySearchTransform:
 # 6. AKShare equity_quote — transform_query / transform_data
 # ──────────────────────────────────────────────────
 
+
 class TestAKShareEquityQuoteTransform:
     def test_transform_query(self):
         from unifin.models.equity_quote import EquityQuoteQuery
@@ -391,21 +420,23 @@ class TestAKShareEquityQuoteTransform:
         from unifin.models.equity_quote import EquityQuoteQuery
         from unifin.providers.akshare.equity_quote import AKShareEquityQuoteFetcher
 
-        mock_data = [{
-            "代码": "000001",
-            "名称": "平安银行",
-            "最新价": 12.5,
-            "今开": 12.3,
-            "最高": 12.8,
-            "最低": 12.1,
-            "昨收": 12.2,
-            "成交量": 500000,
-            "成交额": 6250000.0,
-            "涨跌额": 0.3,
-            "涨跌幅": 2.46,
-            "换手率": 0.5,
-            "流通市值": 240000000000.0,
-        }]
+        mock_data = [
+            {
+                "代码": "000001",
+                "名称": "平安银行",
+                "最新价": 12.5,
+                "今开": 12.3,
+                "最高": 12.8,
+                "最低": 12.1,
+                "昨收": 12.2,
+                "成交量": 500000,
+                "成交额": 6250000.0,
+                "涨跌额": 0.3,
+                "涨跌幅": 2.46,
+                "换手率": 0.5,
+                "流通市值": 240000000000.0,
+            }
+        ]
         q = EquityQuoteQuery(symbol="000001.XSHE")
         result = AKShareEquityQuoteFetcher.transform_data(mock_data, q)
         assert len(result) == 1
@@ -430,6 +461,7 @@ class TestAKShareEquityQuoteTransform:
 # 7. AKShare etf_search — transform_query / transform_data
 # ──────────────────────────────────────────────────
 
+
 class TestAKShareEtfSearchTransform:
     def test_transform_query(self):
         from unifin.models.etf_search import EtfSearchQuery
@@ -446,11 +478,13 @@ class TestAKShareEtfSearchTransform:
         from unifin.models.etf_search import EtfSearchQuery
         from unifin.providers.akshare.etf_search import AKShareEtfSearchFetcher
 
-        mock_df = pd.DataFrame({
-            "基金代码": ["510300", "510500", "000001"],
-            "基金简称": ["华泰柏瑞沪深300ETF", "南方中证500ETF", "华夏成长混合"],
-            "基金类型": ["股票型-ETF", "股票型-ETF", "混合型"],
-        })
+        mock_df = pd.DataFrame(
+            {
+                "基金代码": ["510300", "510500", "000001"],
+                "基金简称": ["华泰柏瑞沪深300ETF", "南方中证500ETF", "华夏成长混合"],
+                "基金类型": ["股票型-ETF", "股票型-ETF", "混合型"],
+            }
+        )
         raw = {"source": "fund_name_em", "data": mock_df}
         q = EtfSearchQuery(query="")
         result = AKShareEtfSearchFetcher.transform_data(raw, q)
@@ -465,11 +499,13 @@ class TestAKShareEtfSearchTransform:
         from unifin.models.etf_search import EtfSearchQuery
         from unifin.providers.akshare.etf_search import AKShareEtfSearchFetcher
 
-        mock_df = pd.DataFrame({
-            "基金代码": ["510300", "510500"],
-            "基金简称": ["华泰柏瑞沪深300ETF", "南方中证500ETF"],
-            "基金类型": ["股票型-ETF", "股票型-ETF"],
-        })
+        mock_df = pd.DataFrame(
+            {
+                "基金代码": ["510300", "510500"],
+                "基金简称": ["华泰柏瑞沪深300ETF", "南方中证500ETF"],
+                "基金类型": ["股票型-ETF", "股票型-ETF"],
+            }
+        )
         raw = {"source": "fund_name_em", "data": mock_df}
         q = EtfSearchQuery(query="300")
         result = AKShareEtfSearchFetcher.transform_data(raw, q)
@@ -489,6 +525,7 @@ class TestAKShareEtfSearchTransform:
 # ──────────────────────────────────────────────────
 # 8. AKShare trade_calendar — transform_query / transform_data
 # ──────────────────────────────────────────────────
+
 
 class TestAKShareTradeCalendarTransform:
     def test_transform_query_cn(self):
@@ -542,6 +579,7 @@ class TestAKShareTradeCalendarTransform:
 # 9. SmartRouter coverage for new providers
 # ──────────────────────────────────────────────────
 
+
 class TestSmartRouterNewProviders:
     """Router should find akshare + yfinance for CN models."""
 
@@ -589,6 +627,7 @@ class TestSmartRouterNewProviders:
 # ──────────────────────────────────────────────────
 # 10. Symbol format for akshare
 # ──────────────────────────────────────────────────
+
 
 class TestAKShareSymbolFormat:
     """akshare expects plain codes (no suffix)."""

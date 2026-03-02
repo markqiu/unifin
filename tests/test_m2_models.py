@@ -1,12 +1,13 @@
 """Tests for all M2 models — models, registry, and yfinance integration."""
 
-import pytest
 from datetime import date
 
+import pytest
 
 # ──────────────────────────────────────────────
 # 1. Model registration tests
 # ──────────────────────────────────────────────
+
 
 class TestModelRegistration:
     """Verify all 10 models are registered."""
@@ -15,9 +16,16 @@ class TestModelRegistration:
         from unifin.core.registry import model_registry
 
         expected = [
-            "equity_historical", "equity_search", "equity_profile",
-            "equity_quote", "balance_sheet", "income_statement",
-            "cash_flow", "index_historical", "etf_search", "trade_calendar",
+            "equity_historical",
+            "equity_search",
+            "equity_profile",
+            "equity_quote",
+            "balance_sheet",
+            "income_statement",
+            "cash_flow",
+            "index_historical",
+            "etf_search",
+            "trade_calendar",
         ]
         registered = model_registry.list_models()
         for name in expected:
@@ -42,6 +50,7 @@ class TestModelRegistration:
 # 2. Fetcher registration tests
 # ──────────────────────────────────────────────
 
+
 class TestFetcherRegistration:
     """Verify yfinance fetchers are registered for supported models."""
 
@@ -49,9 +58,16 @@ class TestFetcherRegistration:
         from unifin.core.registry import provider_registry
 
         yf_models = [
-            "equity_historical", "equity_search", "equity_profile",
-            "equity_quote", "balance_sheet", "income_statement",
-            "cash_flow", "index_historical", "etf_search", "trade_calendar",
+            "equity_historical",
+            "equity_search",
+            "equity_profile",
+            "equity_quote",
+            "balance_sheet",
+            "income_statement",
+            "cash_flow",
+            "index_historical",
+            "etf_search",
+            "trade_calendar",
         ]
         for model_name in yf_models:
             providers = list(provider_registry.get_providers_for_model(model_name).keys())
@@ -61,8 +77,11 @@ class TestFetcherRegistration:
         from unifin.core.registry import provider_registry
 
         ak_models = [
-            "equity_historical", "equity_search", "equity_quote",
-            "etf_search", "trade_calendar",
+            "equity_historical",
+            "equity_search",
+            "equity_quote",
+            "etf_search",
+            "trade_calendar",
         ]
         for model_name in ak_models:
             providers = list(provider_registry.get_providers_for_model(model_name).keys())
@@ -72,6 +91,7 @@ class TestFetcherRegistration:
 # ──────────────────────────────────────────────
 # 3. Pydantic model validation tests
 # ──────────────────────────────────────────────
+
 
 class TestEquitySearchModel:
     def test_query_defaults(self):
@@ -102,7 +122,9 @@ class TestEquityProfileModel:
         from unifin.models.equity_profile import EquityProfileData
 
         d = EquityProfileData(
-            symbol="AAPL", name="Apple Inc.", sector="Technology",
+            symbol="AAPL",
+            name="Apple Inc.",
+            sector="Technology",
             market_cap=3_000_000_000_000.0,
         )
         assert d.market_cap == 3_000_000_000_000.0
@@ -114,8 +136,11 @@ class TestEquityQuoteModel:
         from unifin.models.equity_quote import EquityQuoteData
 
         d = EquityQuoteData(
-            symbol="AAPL", last_price=185.5, volume=50000000,
-            change=2.3, change_percent=0.0125,
+            symbol="AAPL",
+            last_price=185.5,
+            volume=50000000,
+            change=2.3,
+            change_percent=0.0125,
         )
         assert d.last_price == 185.5
         assert d.change_percent == 0.0125
@@ -182,7 +207,10 @@ class TestIndexHistoricalModel:
 
         d = IndexHistoricalData(
             date=date(2024, 1, 2),
-            open=4742.0, high=4793.0, low=4740.0, close=4770.0,
+            open=4742.0,
+            high=4793.0,
+            low=4740.0,
+            close=4770.0,
             volume=3_200_000_000,
         )
         assert d.close == 4770.0
@@ -213,6 +241,7 @@ class TestTradeCalendarModel:
 # ──────────────────────────────────────────────
 # 4. SDK function existence tests
 # ──────────────────────────────────────────────
+
 
 class TestSDKNamespaces:
     def test_equity_functions(self):
@@ -246,9 +275,11 @@ class TestSDKNamespaces:
 # 5. End-to-end integration tests (yfinance)
 # ──────────────────────────────────────────────
 
+
 def _yfinance_available() -> bool:
     try:
         import yfinance  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -277,7 +308,9 @@ class TestEndToEndYFinance:
         assert "sector" in df.columns
         row = df.to_dicts()[0]
         assert row["symbol"] == "AAPL"
-        print(f"\n  equity.profile('AAPL'): sector={row.get('sector')}, mktcap={row.get('market_cap')}")
+        print(
+            f"\n  equity.profile('AAPL'): sector={row.get('sector')}, mktcap={row.get('market_cap')}"
+        )
 
     def test_equity_quote(self):
         import unifin
@@ -347,14 +380,15 @@ class TestStrictTyping:
     def test_period_enum_rejects_invalid(self):
         """period='monthly' should be rejected."""
         from pydantic import ValidationError
+
         from unifin.models.balance_sheet import BalanceSheetQuery
 
         with pytest.raises(ValidationError):
             BalanceSheetQuery(symbol="AAPL", period="monthly")
 
     def test_period_enum_accepts_valid(self):
-        from unifin.models.balance_sheet import BalanceSheetQuery
         from unifin.core.types import Period
+        from unifin.models.balance_sheet import BalanceSheetQuery
 
         q = BalanceSheetQuery(symbol="AAPL", period="quarter")
         assert q.period == Period.QUARTER
@@ -364,14 +398,15 @@ class TestStrictTyping:
 
     def test_market_enum_rejects_invalid(self):
         from pydantic import ValidationError
+
         from unifin.models.trade_calendar import TradeCalendarQuery
 
         with pytest.raises(ValidationError):
             TradeCalendarQuery(market="mars")
 
     def test_market_enum_accepts_valid(self):
-        from unifin.models.trade_calendar import TradeCalendarQuery
         from unifin.core.types import Market
+        from unifin.models.trade_calendar import TradeCalendarQuery
 
         q = TradeCalendarQuery(market="us")
         assert q.market == Market.US
@@ -379,6 +414,7 @@ class TestStrictTyping:
     def test_date_range_validation(self):
         """start_date > end_date should raise."""
         from pydantic import ValidationError
+
         from unifin.models.equity_historical import EquityHistoricalQuery
 
         with pytest.raises(ValidationError, match="start_date"):
@@ -400,6 +436,7 @@ class TestStrictTyping:
 
     def test_index_date_range_validation(self):
         from pydantic import ValidationError
+
         from unifin.models.index_historical import IndexHistoricalQuery
 
         with pytest.raises(ValidationError, match="start_date"):
@@ -411,6 +448,7 @@ class TestStrictTyping:
 
     def test_interval_enum_rejects_invalid(self):
         from pydantic import ValidationError
+
         from unifin.models.equity_historical import EquityHistoricalQuery
 
         with pytest.raises(ValidationError):
@@ -480,9 +518,16 @@ class TestProviderMetadata:
         from unifin.core.registry import provider_registry
 
         models_with_yfinance = [
-            "equity_historical", "equity_search", "equity_profile",
-            "equity_quote", "balance_sheet", "income_statement",
-            "cash_flow", "index_historical", "etf_search", "trade_calendar",
+            "equity_historical",
+            "equity_search",
+            "equity_profile",
+            "equity_quote",
+            "balance_sheet",
+            "income_statement",
+            "cash_flow",
+            "index_historical",
+            "etf_search",
+            "trade_calendar",
         ]
         for model_name in models_with_yfinance:
             fetcher_cls = provider_registry.get_fetcher(model_name, "yfinance")
@@ -532,6 +577,7 @@ class TestSymbolValidation:
 
     def test_reject_empty(self):
         from pydantic import ValidationError
+
         from unifin.models.equity_historical import EquityHistoricalQuery
 
         with pytest.raises(ValidationError, match="symbol"):
@@ -539,6 +585,7 @@ class TestSymbolValidation:
 
     def test_reject_garbage(self):
         from pydantic import ValidationError
+
         from unifin.models.equity_historical import EquityHistoricalQuery
 
         with pytest.raises(ValidationError, match="Invalid symbol"):
@@ -546,6 +593,7 @@ class TestSymbolValidation:
 
     def test_reject_spaces(self):
         from pydantic import ValidationError
+
         from unifin.models.balance_sheet import BalanceSheetQuery
 
         with pytest.raises(ValidationError, match="Invalid symbol"):
@@ -553,6 +601,7 @@ class TestSymbolValidation:
 
     def test_reject_too_long_ticker(self):
         from pydantic import ValidationError
+
         from unifin.models.equity_profile import EquityProfileQuery
 
         with pytest.raises(ValidationError, match="Invalid symbol"):
@@ -568,12 +617,12 @@ class TestSymbolValidation:
         """Every Query model with a required symbol should reject garbage."""
         from pydantic import ValidationError
 
+        from unifin.models.balance_sheet import BalanceSheetQuery
+        from unifin.models.cash_flow import CashFlowQuery
         from unifin.models.equity_historical import EquityHistoricalQuery
         from unifin.models.equity_profile import EquityProfileQuery
         from unifin.models.equity_quote import EquityQuoteQuery
-        from unifin.models.balance_sheet import BalanceSheetQuery
         from unifin.models.income_statement import IncomeStatementQuery
-        from unifin.models.cash_flow import CashFlowQuery
         from unifin.models.index_historical import IndexHistoricalQuery
 
         models = [

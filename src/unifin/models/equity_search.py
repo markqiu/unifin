@@ -4,7 +4,6 @@ Search for stocks by name, ticker symbol, or other identifiers.
 """
 
 import datetime as dt
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -22,7 +21,7 @@ class EquitySearchQuery(BaseModel):
         default=False,
         description="Whether to search by ticker symbol only.",
     )
-    limit: Optional[int] = Field(
+    limit: int | None = Field(
         default=None,
         description="Maximum number of results to return.",
     )
@@ -31,12 +30,14 @@ class EquitySearchQuery(BaseModel):
 class EquitySearchData(BaseModel):
     """Result schema for equity search."""
 
-    symbol: Optional[str] = Field(default=None, description="Stock ticker symbol.")
-    name: Optional[str] = Field(default=None, description="Company name.")
-    exchange: Optional[str] = Field(default=None, description="Exchange / market.")
-    asset_type: Optional[str] = Field(default=None, description="Asset type (e.g., Stock, ETF).")
-    list_date: Optional[dt.date] = Field(default=None, description="IPO / listing date.")
-    is_active: Optional[bool] = Field(default=None, description="Whether the security is actively trading.")
+    symbol: str | None = Field(default=None, description="Stock ticker symbol.")
+    name: str | None = Field(default=None, description="Company name.")
+    exchange: str | None = Field(default=None, description="Exchange / market.")
+    asset_type: str | None = Field(default=None, description="Asset type (e.g., Stock, ETF).")
+    list_date: dt.date | None = Field(default=None, description="IPO / listing date.")
+    is_active: bool | None = Field(
+        default=None, description="Whether the security is actively trading."
+    )
 
 
 model_registry.register(

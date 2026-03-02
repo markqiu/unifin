@@ -17,18 +17,35 @@ class YFinanceEquitySearchFetcher(Fetcher):
     provider_name: ClassVar[str] = "yfinance"
     model_name: ClassVar[str] = "equity_search"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XNYS, Exchange.XNAS, Exchange.XASE, Exchange.ARCX,
-        Exchange.XSHG, Exchange.XSHE,
+        Exchange.XNYS,
+        Exchange.XNAS,
+        Exchange.XASE,
+        Exchange.ARCX,
+        Exchange.XSHG,
+        Exchange.XSHE,
         Exchange.XHKG,
-        Exchange.XJPX, Exchange.XLON, Exchange.XPAR, Exchange.XAMS,
-        Exchange.XETR, Exchange.XSWX, Exchange.XMIL,
-        Exchange.XSES, Exchange.XASX, Exchange.XKRX, Exchange.XTAI,
-        Exchange.XBOM, Exchange.XNSE, Exchange.XTSE,
+        Exchange.XJPX,
+        Exchange.XLON,
+        Exchange.XPAR,
+        Exchange.XAMS,
+        Exchange.XETR,
+        Exchange.XSWX,
+        Exchange.XMIL,
+        Exchange.XSES,
+        Exchange.XASX,
+        Exchange.XKRX,
+        Exchange.XTAI,
+        Exchange.XBOM,
+        Exchange.XNSE,
+        Exchange.XTSE,
     ]
 
     # Coverage metadata
     supported_fields: ClassVar[list[str]] = [
-        "symbol", "name", "exchange", "asset_type",
+        "symbol",
+        "name",
+        "exchange",
+        "asset_type",
     ]
     data_start_date: ClassVar[str] = ""
     data_delay: ClassVar[str] = "15min"
@@ -79,14 +96,19 @@ class YFinanceEquitySearchFetcher(Fetcher):
         results = []
         for item in raw_data:
             if isinstance(item, dict):
-                results.append({
-                    "symbol": item.get("symbol"),
-                    "name": item.get("shortname") or item.get("longname") or item.get("shortName") or item.get("longName"),
-                    "exchange": item.get("exchange") or item.get("exchDisp"),
-                    "asset_type": item.get("quoteType") or item.get("typeDisp"),
-                    "list_date": None,
-                    "is_active": None,
-                })
+                results.append(
+                    {
+                        "symbol": item.get("symbol"),
+                        "name": item.get("shortname")
+                        or item.get("longname")
+                        or item.get("shortName")
+                        or item.get("longName"),
+                        "exchange": item.get("exchange") or item.get("exchDisp"),
+                        "asset_type": item.get("quoteType") or item.get("typeDisp"),
+                        "list_date": None,
+                        "is_active": None,
+                    }
+                )
         return results
 
 

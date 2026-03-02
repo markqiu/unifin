@@ -155,9 +155,7 @@ class NoProviderError(ProviderError):
                 f"Available providers: {available_providers}"
             )
         else:
-            hint_parts.append(
-                "Ensure the provider package is installed and imported."
-            )
+            hint_parts.append("Ensure the provider package is installed and imported.")
 
         super().__init__(
             msg,
@@ -257,7 +255,7 @@ class InvalidDateRangeError(ParamError):
 
     def __init__(self, start_date: Any, end_date: Any) -> None:
         super().__init__(
-            f"start_date must be on or before end_date.",
+            "start_date must be on or before end_date.",
             code="INVALID_DATE_RANGE",
             received=f"start_date={start_date}, end_date={end_date}",
             expected=["start_date <= end_date"],

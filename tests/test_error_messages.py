@@ -4,9 +4,9 @@ Verifies that error messages contain structured, actionable information
 to help AI callers self-correct.
 """
 
-import pytest
 from datetime import date
 
+import pytest
 
 # ──────────────────────────────────────────────
 # 1. Error class structure tests
@@ -385,7 +385,6 @@ class TestErrorInheritance:
 
     def test_provider_errors_caught_as_unifin_error(self):
         from unifin.core.errors import (
-            AllProvidersFailedError,
             NoProviderError,
             ProviderError,
             ProviderNotFoundError,

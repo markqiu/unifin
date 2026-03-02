@@ -115,9 +115,9 @@ class Interval(str, Enum):
 class Adjust(str, Enum):
     """Price adjustment type."""
 
-    NONE = "none"       # 不复权
-    FORWARD = "qfq"     # 前复权 (forward adjust)
-    BACKWARD = "hfq"    # 后复权 (backward adjust)
+    NONE = "none"  # 不复权
+    FORWARD = "qfq"  # 前复权 (forward adjust)
+    BACKWARD = "hfq"  # 后复权 (backward adjust)
 
 
 class Period(str, Enum):
@@ -130,15 +130,15 @@ class Period(str, Enum):
 class Market(str, Enum):
     """Market identifier for calendars and market-level queries."""
 
-    CN = "cn"    # China A-share
-    US = "us"    # United States
-    HK = "hk"    # Hong Kong
-    JP = "jp"    # Japan
-    GB = "gb"    # United Kingdom
-    DE = "de"    # Germany
-    SG = "sg"    # Singapore
-    AU = "au"    # Australia
-    KR = "kr"    # South Korea
-    TW = "tw"    # Taiwan
-    IN = "in"    # India
-    CA = "ca"    # Canada
+    CN = "cn"  # China A-share
+    US = "us"  # United States
+    HK = "hk"  # Hong Kong
+    JP = "jp"  # Japan
+    GB = "gb"  # United Kingdom
+    DE = "de"  # Germany
+    SG = "sg"  # Singapore
+    AU = "au"  # Australia
+    KR = "kr"  # South Korea
+    TW = "tw"  # Taiwan
+    IN = "in"  # India
+    CA = "ca"  # Canada

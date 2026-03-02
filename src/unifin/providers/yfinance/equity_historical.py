@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any, ClassVar
 
 from pydantic import BaseModel
@@ -64,7 +64,12 @@ class YFinanceEquityHistoricalFetcher(Fetcher):
 
     # Coverage metadata
     supported_fields: ClassVar[list[str]] = [
-        "date", "open", "high", "low", "close", "volume",
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
     ]
     data_start_date: ClassVar[str] = "1970-01-01"
     data_delay: ClassVar[str] = "15min"
@@ -101,8 +106,7 @@ class YFinanceEquityHistoricalFetcher(Fetcher):
             import yfinance as yf
         except ImportError:
             raise ImportError(
-                "yfinance is not installed. "
-                "Install it with: pip install 'unifin[yfinance]'"
+                "yfinance is not installed. Install it with: pip install 'unifin[yfinance]'"
             )
 
         ticker = yf.Ticker(params["symbol"])
@@ -149,17 +153,19 @@ class YFinanceEquityHistoricalFetcher(Fetcher):
             if isinstance(dt, pd.Timestamp):
                 dt = dt.date() if dt.hour == 0 and dt.minute == 0 else dt.to_pydatetime()
 
-            results.append({
-                "date": dt,
-                "open": _safe_float(row.get("open")),
-                "high": _safe_float(row.get("high")),
-                "low": _safe_float(row.get("low")),
-                "close": _safe_float(row.get("close")),
-                "volume": _safe_int(row.get("volume")),
-                "amount": None,  # yfinance doesn't provide amount
-                "vwap": None,
-                "turnover_rate": None,
-            })
+            results.append(
+                {
+                    "date": dt,
+                    "open": _safe_float(row.get("open")),
+                    "high": _safe_float(row.get("high")),
+                    "low": _safe_float(row.get("low")),
+                    "close": _safe_float(row.get("close")),
+                    "volume": _safe_int(row.get("volume")),
+                    "amount": None,  # yfinance doesn't provide amount
+                    "vwap": None,
+                    "turnover_rate": None,
+                }
+            )
 
         return results
 

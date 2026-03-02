@@ -4,7 +4,6 @@ Query trading calendar / trading days for a given market.
 """
 
 import datetime as dt
-from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -19,11 +18,11 @@ class TradeCalendarQuery(BaseModel):
         default=Market.CN,
         description="Market identifier.",
     )
-    start_date: Optional[dt.date] = Field(
+    start_date: dt.date | None = Field(
         default=None,
         description="Start date (inclusive).",
     )
-    end_date: Optional[dt.date] = Field(
+    end_date: dt.date | None = Field(
         default=None,
         description="End date (inclusive).",
     )
@@ -42,7 +41,7 @@ class TradeCalendarData(BaseModel):
 
     date: dt.date = Field(description="Trading date.")
     is_open: bool = Field(default=True, description="Whether the market is open on this day.")
-    market: Optional[str] = Field(default=None, description="Market identifier.")
+    market: str | None = Field(default=None, description="Market identifier.")
 
 
 model_registry.register(

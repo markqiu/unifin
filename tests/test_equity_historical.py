@@ -6,7 +6,6 @@ from datetime import date
 
 import pytest
 
-
 # ──────────────────────────────────────────────
 # 1. Symbol resolution tests
 # ──────────────────────────────────────────────
@@ -127,10 +126,9 @@ class TestRegistry:
     """Test model and provider registration."""
 
     def test_model_registered(self):
-        from unifin.core.registry import model_registry
-
         # equity_historical should be registered on import
         import unifin.models.equity_historical  # noqa: F401
+        from unifin.core.registry import model_registry
 
         assert "equity_historical" in model_registry
         info = model_registry.get("equity_historical")

@@ -66,7 +66,6 @@ class DataStore:
         end_date: str | None = None,
     ) -> list[dict[str, Any]]:
         """Load data from local store."""
-        import polars as pl
 
         table_name = f"unifin_{model_name}"
 
@@ -96,9 +95,9 @@ class DataStore:
         table_name = f"unifin_{model_name}"
         try:
             where = f" WHERE symbol = '{symbol}'" if symbol else ""
-            count = self.connection.execute(
-                f"SELECT COUNT(*) FROM {table_name}{where}"
-            ).fetchone()[0]
+            count = self.connection.execute(f"SELECT COUNT(*) FROM {table_name}{where}").fetchone()[
+                0
+            ]
             return count > 0
         except Exception:
             return False

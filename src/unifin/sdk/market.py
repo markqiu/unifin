@@ -23,7 +23,7 @@ def trade_calendar(
     start_date: str | date | None = None,
     end_date: str | date | None = None,
     provider: str | None = None,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Get trading calendar for a market.
 
     Args:

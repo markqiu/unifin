@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 from pydantic import BaseModel
 
@@ -23,10 +22,10 @@ logger = logging.getLogger("unifin")
 class ModelInfo:
     """Metadata about a registered data model."""
 
-    name: str                          # e.g. "equity_historical"
-    category: str                      # e.g. "equity.price"
-    query_type: type[BaseModel]        # Pydantic model for query params
-    result_type: type[BaseModel]       # Pydantic model for result data
+    name: str  # e.g. "equity_historical"
+    category: str  # e.g. "equity.price"
+    query_type: type[BaseModel]  # Pydantic model for query params
+    result_type: type[BaseModel]  # Pydantic model for result data
     description: str = ""
     version: str = "1.0"
 
@@ -130,18 +129,14 @@ class ProviderRegistry:
         if provider_name not in fetchers:
             from unifin.core.errors import FetcherNotFoundError
 
-            raise FetcherNotFoundError(
-                model_name, provider_name, sorted(fetchers.keys())
-            )
+            raise FetcherNotFoundError(model_name, provider_name, sorted(fetchers.keys()))
         return fetchers[provider_name]
 
     def get_providers_for_model(self, model_name: str) -> dict[str, type[Fetcher]]:
         """Get all providers that support a model."""
         return self._fetchers.get(model_name, {})
 
-    def get_providers_for_exchange(
-        self, model_name: str, exchange: Exchange
-    ) -> list[str]:
+    def get_providers_for_exchange(self, model_name: str, exchange: Exchange) -> list[str]:
         """Get provider names that support a model for a specific exchange."""
         result = []
         for provider_name, fetcher_cls in self._fetchers.get(model_name, {}).items():
@@ -154,9 +149,7 @@ class ProviderRegistry:
         if name not in self._providers:
             from unifin.core.errors import ProviderNotFoundError
 
-            raise ProviderNotFoundError(
-                name, sorted(self._providers.keys())
-            )
+            raise ProviderNotFoundError(name, sorted(self._providers.keys()))
         return self._providers[name]
 
     def list_providers(self) -> list[str]:

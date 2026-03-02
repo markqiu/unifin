@@ -14,11 +14,11 @@ from unifin.core.types import Exchange, Interval
 # yfinance uses caret-prefixed symbols for major indices
 _INDEX_SYMBOL_MAP: dict[str, str] = {
     # US
-    "^GSPC": "^GSPC",     # S&P 500
-    "^DJI": "^DJI",       # Dow Jones
-    "^IXIC": "^IXIC",     # NASDAQ Composite
-    "^RUT": "^RUT",       # Russell 2000
-    "^VIX": "^VIX",       # VIX
+    "^GSPC": "^GSPC",  # S&P 500
+    "^DJI": "^DJI",  # Dow Jones
+    "^IXIC": "^IXIC",  # NASDAQ Composite
+    "^RUT": "^RUT",  # Russell 2000
+    "^VIX": "^VIX",  # VIX
     # China — Shanghai indices
     "000001.XSHG": "000001.SS",
     "000300.XSHG": "000300.SS",
@@ -58,17 +58,27 @@ class YFinanceIndexHistoricalFetcher(Fetcher):
     provider_name: ClassVar[str] = "yfinance"
     model_name: ClassVar[str] = "index_historical"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XNYS, Exchange.XNAS,
-        Exchange.XSHG, Exchange.XSHE,
+        Exchange.XNYS,
+        Exchange.XNAS,
+        Exchange.XSHG,
+        Exchange.XSHE,
         Exchange.XHKG,
-        Exchange.XJPX, Exchange.XLON,
-        Exchange.XPAR, Exchange.XETR,
+        Exchange.XJPX,
+        Exchange.XLON,
+        Exchange.XPAR,
+        Exchange.XETR,
     ]
 
     # Coverage metadata
     supported_fields: ClassVar[list[str]] = [
-        "date", "open", "high", "low", "close", "volume",
-        "change", "change_percent",
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "change",
+        "change_percent",
     ]
     data_start_date: ClassVar[str] = "1970-01-01"
     data_delay: ClassVar[str] = "15min"
@@ -147,17 +157,19 @@ class YFinanceIndexHistoricalFetcher(Fetcher):
                 change = close - prev_close
                 change_pct = change / prev_close
 
-            results.append({
-                "date": dt,
-                "open": _safe_float(row.get("open")),
-                "high": _safe_float(row.get("high")),
-                "low": _safe_float(row.get("low")),
-                "close": close,
-                "volume": _safe_int(row.get("volume")),
-                "amount": None,
-                "change": change,
-                "change_percent": change_pct,
-            })
+            results.append(
+                {
+                    "date": dt,
+                    "open": _safe_float(row.get("open")),
+                    "high": _safe_float(row.get("high")),
+                    "low": _safe_float(row.get("low")),
+                    "close": close,
+                    "volume": _safe_int(row.get("volume")),
+                    "amount": None,
+                    "change": change,
+                    "change_percent": change_pct,
+                }
+            )
             prev_close = close
 
         return results

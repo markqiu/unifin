@@ -7,8 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from unifin.core.fetcher import Fetcher
-from unifin.core.registry import ModelInfo, model_registry, provider_registry
+from unifin.core.registry import model_registry, provider_registry
 from unifin.core.symbol import parse_symbol, to_provider_symbol, to_unified_symbol
 from unifin.core.types import Exchange
 
@@ -71,9 +70,7 @@ class SmartRouter:
             from unifin.core.errors import NoProviderError
 
             # Gather all available providers for this model for context
-            all_for_model = list(
-                provider_registry.get_providers_for_model(model_name).keys()
-            )
+            all_for_model = list(provider_registry.get_providers_for_model(model_name).keys())
             raise NoProviderError(
                 model_name=model_name,
                 exchange=exchange,
@@ -89,7 +86,9 @@ class SmartRouter:
             except Exception as e:
                 logger.warning(
                     "Provider '%s' failed for %s: %s. Trying next...",
-                    prov_name, model_name, e,
+                    prov_name,
+                    model_name,
+                    e,
                 )
                 last_error = e
 
@@ -146,9 +145,7 @@ class SmartRouter:
         results = fetcher_cls.transform_data(raw_data, query)
 
         # Resolve the unified symbol for injection
-        unified_symbol = (
-            to_unified_symbol(original_symbol) if original_symbol else None
-        )
+        unified_symbol = to_unified_symbol(original_symbol) if original_symbol else None
 
         # Validate each row against the result Pydantic model and
         # inject / convert symbols
@@ -160,9 +157,7 @@ class SmartRouter:
                 if "symbol" not in row or row["symbol"] is None:
                     row["symbol"] = unified_symbol
                 else:
-                    row["symbol"] = to_unified_symbol(
-                        str(row["symbol"]), provider_name
-                    )
+                    row["symbol"] = to_unified_symbol(str(row["symbol"]), provider_name)
 
             # Pydantic validation — ensures type correctness
             obj = result_type.model_validate(row)
@@ -170,7 +165,9 @@ class SmartRouter:
 
         logger.debug(
             "Fetched %d rows from %s for model=%s",
-            len(validated), provider_name, model_name,
+            len(validated),
+            provider_name,
+            model_name,
         )
         return validated
 

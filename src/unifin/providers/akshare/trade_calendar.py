@@ -22,7 +22,8 @@ class AKShareTradeCalendarFetcher(Fetcher):
     provider_name: ClassVar[str] = "akshare"
     model_name: ClassVar[str] = "trade_calendar"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XSHG, Exchange.XSHE,
+        Exchange.XSHG,
+        Exchange.XSHE,
     ]
 
     supported_fields: ClassVar[list[str]] = ["date", "is_open", "market"]
@@ -87,10 +88,7 @@ class AKShareTradeCalendarFetcher(Fetcher):
         dates = raw_data.get("dates", [])
         market = raw_data.get("market", "cn")
 
-        return [
-            {"date": d, "is_open": True, "market": market}
-            for d in dates
-        ]
+        return [{"date": d, "is_open": True, "market": market} for d in dates]
 
 
 provider_registry.register_fetcher(AKShareTradeCalendarFetcher)

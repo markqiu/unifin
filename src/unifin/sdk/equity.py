@@ -34,7 +34,7 @@ def historical(
     adjust: str | Adjust = Adjust.NONE,
     provider: str | None = None,
     use_cache: bool = True,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Get historical price data for an equity.
 
     Args:
@@ -124,7 +124,7 @@ def search(
     is_symbol: bool = False,
     limit: int | None = None,
     provider: str | None = None,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Search for equities by name or symbol.
 
     Args:
@@ -148,7 +148,7 @@ def search(
 def profile(
     symbol: str,
     provider: str | None = None,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Get company profile / basic information.
 
     Args:
@@ -170,7 +170,7 @@ def profile(
 def quote(
     symbol: str,
     provider: str | None = None,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Get real-time / delayed equity quote.
 
     Args:
@@ -194,7 +194,7 @@ def balance_sheet(
     period: str | Period = Period.ANNUAL,
     limit: int | None = 5,
     provider: str | None = None,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Get balance sheet / statement of financial position.
 
     Args:
@@ -227,7 +227,7 @@ def income_statement(
     period: str | Period = Period.ANNUAL,
     limit: int | None = 5,
     provider: str | None = None,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Get income statement / profit & loss.
 
     Args:
@@ -260,7 +260,7 @@ def cash_flow(
     period: str | Period = Period.ANNUAL,
     limit: int | None = 5,
     provider: str | None = None,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Get cash flow statement.
 
     Args:

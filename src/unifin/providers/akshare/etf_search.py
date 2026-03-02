@@ -21,11 +21,14 @@ class AKShareEtfSearchFetcher(Fetcher):
     provider_name: ClassVar[str] = "akshare"
     model_name: ClassVar[str] = "etf_search"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XSHG, Exchange.XSHE,
+        Exchange.XSHG,
+        Exchange.XSHE,
     ]
 
     supported_fields: ClassVar[list[str]] = [
-        "symbol", "name", "fund_type",
+        "symbol",
+        "name",
+        "fund_type",
     ]
     data_start_date: ClassVar[str] = ""
     data_delay: ClassVar[str] = "eod"
@@ -83,19 +86,12 @@ class AKShareEtfSearchFetcher(Fetcher):
         for item in records:
             # Normalize column names from different APIs
             symbol = str(
-                item.get("基金代码", "")
-                or item.get("代码", "")
-                or item.get("symbol", "")
+                item.get("基金代码", "") or item.get("代码", "") or item.get("symbol", "")
             ).strip()
             name = str(
-                item.get("基金简称", "")
-                or item.get("名称", "")
-                or item.get("name", "")
+                item.get("基金简称", "") or item.get("名称", "") or item.get("name", "")
             ).strip()
-            fund_type = str(
-                item.get("基金类型", "")
-                or item.get("type", "")
-            ).strip()
+            fund_type = str(item.get("基金类型", "") or item.get("type", "")).strip()
 
             if not symbol:
                 continue
@@ -109,16 +105,18 @@ class AKShareEtfSearchFetcher(Fetcher):
             if search_query and search_query not in name and search_query not in symbol:
                 continue
 
-            results.append({
-                "symbol": symbol,
-                "name": name or None,
-                "exchange": None,
-                "fund_family": None,
-                "fund_type": fund_type or "ETF",
-                "list_date": None,
-                "expense_ratio": None,
-                "total_assets": None,
-            })
+            results.append(
+                {
+                    "symbol": symbol,
+                    "name": name or None,
+                    "exchange": None,
+                    "fund_family": None,
+                    "fund_type": fund_type or "ETF",
+                    "list_date": None,
+                    "expense_ratio": None,
+                    "total_assets": None,
+                }
+            )
 
             if len(results) >= limit:
                 break

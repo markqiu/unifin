@@ -4,7 +4,6 @@ Historical OHLCV price data for market indices.
 """
 
 import datetime as dt
-from typing import Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -25,11 +24,12 @@ class IndexHistoricalQuery(BaseModel):
     @classmethod
     def _check_symbol(cls, v: str) -> str:
         return validate_symbol(v)
-    start_date: Optional[dt.date] = Field(
+
+    start_date: dt.date | None = Field(
         default=None,
         description="Start date (inclusive). Defaults to 1 year ago.",
     )
-    end_date: Optional[dt.date] = Field(
+    end_date: dt.date | None = Field(
         default=None,
         description="End date (inclusive). Defaults to today.",
     )
@@ -50,16 +50,16 @@ class IndexHistoricalQuery(BaseModel):
 class IndexHistoricalData(BaseModel):
     """Result schema for index historical price data."""
 
-    date: Union[dt.date, dt.datetime] = Field(description="Bar timestamp.")
-    open: Optional[float] = Field(default=None, description="Opening price.")
-    high: Optional[float] = Field(default=None, description="Highest price.")
-    low: Optional[float] = Field(default=None, description="Lowest price.")
-    close: Optional[float] = Field(default=None, description="Closing price.")
-    volume: Optional[int] = Field(default=None, description="Trading volume.")
-    amount: Optional[float] = Field(default=None, description="Turnover amount (currency).")
-    change: Optional[float] = Field(default=None, description="Price change from previous close.")
-    change_percent: Optional[float] = Field(default=None, description="Price change percentage.")
-    symbol: Optional[str] = Field(default=None, description="Index symbol.")
+    date: dt.date | dt.datetime = Field(description="Bar timestamp.")
+    open: float | None = Field(default=None, description="Opening price.")
+    high: float | None = Field(default=None, description="Highest price.")
+    low: float | None = Field(default=None, description="Lowest price.")
+    close: float | None = Field(default=None, description="Closing price.")
+    volume: int | None = Field(default=None, description="Trading volume.")
+    amount: float | None = Field(default=None, description="Turnover amount (currency).")
+    change: float | None = Field(default=None, description="Price change from previous close.")
+    change_percent: float | None = Field(default=None, description="Price change percentage.")
+    symbol: str | None = Field(default=None, description="Index symbol.")
 
 
 model_registry.register(

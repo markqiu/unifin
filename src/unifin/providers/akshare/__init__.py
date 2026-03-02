@@ -18,8 +18,8 @@ provider_registry.register_provider(
         markets=["CN", "HK"],
         data_delay="15min",
         notes="Free and open-source. Covers A-shares and HK stocks. "
-              "Data sourced from EastMoney, Sina, XueQiu and others. "
-              "No API key required. Rate limits may apply during peak hours.",
+        "Data sourced from EastMoney, Sina, XueQiu and others. "
+        "No API key required. Rate limits may apply during peak hours.",
     )
 )
 

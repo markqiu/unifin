@@ -32,11 +32,15 @@ class AKShareEquitySearchFetcher(Fetcher):
     provider_name: ClassVar[str] = "akshare"
     model_name: ClassVar[str] = "equity_search"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XSHG, Exchange.XSHE, Exchange.XBSE,
+        Exchange.XSHG,
+        Exchange.XSHE,
+        Exchange.XBSE,
     ]
 
     supported_fields: ClassVar[list[str]] = [
-        "symbol", "name", "exchange",
+        "symbol",
+        "name",
+        "exchange",
     ]
     data_start_date: ClassVar[str] = ""
     data_delay: ClassVar[str] = "eod"
@@ -84,14 +88,16 @@ class AKShareEquitySearchFetcher(Fetcher):
                 continue
 
             exchange = _infer_exchange(code)
-            results.append({
-                "symbol": f"{code}.{exchange}" if exchange else code,
-                "name": name,
-                "exchange": exchange,
-                "asset_type": "EQUITY",
-                "list_date": None,
-                "is_active": None,
-            })
+            results.append(
+                {
+                    "symbol": f"{code}.{exchange}" if exchange else code,
+                    "name": name,
+                    "exchange": exchange,
+                    "asset_type": "EQUITY",
+                    "list_date": None,
+                    "is_active": None,
+                }
+            )
 
             if len(results) >= limit:
                 break

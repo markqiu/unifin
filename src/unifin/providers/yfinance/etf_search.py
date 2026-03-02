@@ -17,17 +17,34 @@ class YFinanceEtfSearchFetcher(Fetcher):
     provider_name: ClassVar[str] = "yfinance"
     model_name: ClassVar[str] = "etf_search"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XNYS, Exchange.XNAS, Exchange.XASE, Exchange.ARCX,
-        Exchange.XSHG, Exchange.XSHE,
+        Exchange.XNYS,
+        Exchange.XNAS,
+        Exchange.XASE,
+        Exchange.ARCX,
+        Exchange.XSHG,
+        Exchange.XSHE,
         Exchange.XHKG,
-        Exchange.XJPX, Exchange.XLON, Exchange.XPAR, Exchange.XAMS,
-        Exchange.XETR, Exchange.XSWX, Exchange.XMIL,
-        Exchange.XSES, Exchange.XASX, Exchange.XKRX, Exchange.XTAI,
-        Exchange.XBOM, Exchange.XNSE, Exchange.XTSE,
+        Exchange.XJPX,
+        Exchange.XLON,
+        Exchange.XPAR,
+        Exchange.XAMS,
+        Exchange.XETR,
+        Exchange.XSWX,
+        Exchange.XMIL,
+        Exchange.XSES,
+        Exchange.XASX,
+        Exchange.XKRX,
+        Exchange.XTAI,
+        Exchange.XBOM,
+        Exchange.XNSE,
+        Exchange.XTSE,
     ]
 
     supported_fields: ClassVar[list[str]] = [
-        "symbol", "name", "exchange", "fund_type",
+        "symbol",
+        "name",
+        "exchange",
+        "fund_type",
     ]
     data_start_date: ClassVar[str] = ""
     data_delay: ClassVar[str] = "15min"
@@ -62,7 +79,8 @@ class YFinanceEtfSearchFetcher(Fetcher):
             # Filter results to ETF-like types
             etf_types = {"ETF", "MUTUALFUND"}
             filtered = [
-                q for q in quotes
+                q
+                for q in quotes
                 if isinstance(q, dict) and q.get("quoteType", "").upper() in etf_types
             ]
             # If filtering produced nothing, return all results (may include non-ETFs)
@@ -78,21 +96,23 @@ class YFinanceEtfSearchFetcher(Fetcher):
         results = []
         for item in raw_data:
             if isinstance(item, dict):
-                results.append({
-                    "symbol": item.get("symbol"),
-                    "name": (
-                        item.get("shortname")
-                        or item.get("longname")
-                        or item.get("shortName")
-                        or item.get("longName")
-                    ),
-                    "exchange": item.get("exchange") or item.get("exchDisp"),
-                    "fund_family": None,
-                    "fund_type": item.get("quoteType") or item.get("typeDisp"),
-                    "list_date": None,
-                    "expense_ratio": None,
-                    "total_assets": None,
-                })
+                results.append(
+                    {
+                        "symbol": item.get("symbol"),
+                        "name": (
+                            item.get("shortname")
+                            or item.get("longname")
+                            or item.get("shortName")
+                            or item.get("longName")
+                        ),
+                        "exchange": item.get("exchange") or item.get("exchDisp"),
+                        "fund_family": None,
+                        "fund_type": item.get("quoteType") or item.get("typeDisp"),
+                        "list_date": None,
+                        "expense_ratio": None,
+                        "total_assets": None,
+                    }
+                )
         return results
 
 

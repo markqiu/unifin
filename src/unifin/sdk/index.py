@@ -25,7 +25,7 @@ def historical(
     end_date: str | date | None = None,
     interval: str | Interval = Interval.DAILY,
     provider: str | None = None,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Get historical price data for a market index.
 
     Args:

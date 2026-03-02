@@ -5,7 +5,6 @@ This is the single most fundamental model in the platform.
 """
 
 import datetime as dt
-from typing import Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -26,11 +25,12 @@ class EquityHistoricalQuery(BaseModel):
     @classmethod
     def _check_symbol(cls, v: str) -> str:
         return validate_symbol(v)
-    start_date: Optional[dt.date] = Field(
+
+    start_date: dt.date | None = Field(
         default=None,
         description="Start date (inclusive). Defaults to 1 year ago.",
     )
-    end_date: Optional[dt.date] = Field(
+    end_date: dt.date | None = Field(
         default=None,
         description="End date (inclusive). Defaults to today.",
     )
@@ -55,16 +55,16 @@ class EquityHistoricalQuery(BaseModel):
 class EquityHistoricalData(BaseModel):
     """Result schema for equity historical price data."""
 
-    date: Union[dt.date, dt.datetime] = Field(description="Bar timestamp.")
-    open: Optional[float] = Field(default=None, description="Opening price.")
-    high: Optional[float] = Field(default=None, description="Highest price.")
-    low: Optional[float] = Field(default=None, description="Lowest price.")
-    close: Optional[float] = Field(default=None, description="Closing price.")
-    volume: Optional[int] = Field(default=None, description="Trading volume (shares).")
-    amount: Optional[float] = Field(default=None, description="Trading amount (local currency).")
-    vwap: Optional[float] = Field(default=None, description="Volume-weighted average price.")
-    turnover_rate: Optional[float] = Field(default=None, description="Turnover rate (ratio, 0-1).")
-    symbol: Optional[str] = Field(default=None, description="Stock symbol in unified MIC format.")
+    date: dt.date | dt.datetime = Field(description="Bar timestamp.")
+    open: float | None = Field(default=None, description="Opening price.")
+    high: float | None = Field(default=None, description="Highest price.")
+    low: float | None = Field(default=None, description="Lowest price.")
+    close: float | None = Field(default=None, description="Closing price.")
+    volume: int | None = Field(default=None, description="Trading volume (shares).")
+    amount: float | None = Field(default=None, description="Trading amount (local currency).")
+    vwap: float | None = Field(default=None, description="Volume-weighted average price.")
+    turnover_rate: float | None = Field(default=None, description="Turnover rate (ratio, 0-1).")
+    symbol: str | None = Field(default=None, description="Stock symbol in unified MIC format.")
 
 
 # ── Register the model ──

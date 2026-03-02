@@ -4,7 +4,6 @@ Company profile / basic information.
 """
 
 import datetime as dt
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -30,21 +29,25 @@ class EquityProfileData(BaseModel):
     """Result schema for equity profile / company info."""
 
     symbol: str = Field(description="Stock ticker symbol.")
-    name: Optional[str] = Field(default=None, description="Company name.")
-    legal_name: Optional[str] = Field(default=None, description="Official legal name.")
-    exchange: Optional[str] = Field(default=None, description="Primary exchange.")
-    sector: Optional[str] = Field(default=None, description="Industry sector.")
-    industry: Optional[str] = Field(default=None, description="Industry category.")
-    employees: Optional[int] = Field(default=None, description="Number of employees.")
-    description: Optional[str] = Field(default=None, description="Company description / business summary.")
-    country: Optional[str] = Field(default=None, description="Country of domicile.")
-    city: Optional[str] = Field(default=None, description="Headquarters city.")
-    website: Optional[str] = Field(default=None, description="Company website URL.")
-    ceo: Optional[str] = Field(default=None, description="Chief Executive Officer.")
-    market_cap: Optional[float] = Field(default=None, description="Market capitalization.")
-    currency: Optional[str] = Field(default=None, description="Trading currency.")
-    list_date: Optional[dt.date] = Field(default=None, description="IPO / listing date.")
-    is_active: Optional[bool] = Field(default=None, description="Whether the company is actively trading.")
+    name: str | None = Field(default=None, description="Company name.")
+    legal_name: str | None = Field(default=None, description="Official legal name.")
+    exchange: str | None = Field(default=None, description="Primary exchange.")
+    sector: str | None = Field(default=None, description="Industry sector.")
+    industry: str | None = Field(default=None, description="Industry category.")
+    employees: int | None = Field(default=None, description="Number of employees.")
+    description: str | None = Field(
+        default=None, description="Company description / business summary."
+    )
+    country: str | None = Field(default=None, description="Country of domicile.")
+    city: str | None = Field(default=None, description="Headquarters city.")
+    website: str | None = Field(default=None, description="Company website URL.")
+    ceo: str | None = Field(default=None, description="Chief Executive Officer.")
+    market_cap: float | None = Field(default=None, description="Market capitalization.")
+    currency: str | None = Field(default=None, description="Trading currency.")
+    list_date: dt.date | None = Field(default=None, description="IPO / listing date.")
+    is_active: bool | None = Field(
+        default=None, description="Whether the company is actively trading."
+    )
 
 
 model_registry.register(

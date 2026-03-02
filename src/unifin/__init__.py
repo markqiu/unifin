@@ -26,15 +26,15 @@ Usage:
 __version__ = "0.1.0"
 
 # ── Register models (must happen before providers) ──
+from unifin.models import balance_sheet as _m5  # noqa: F401, E402
+from unifin.models import cash_flow as _m7  # noqa: F401, E402
 from unifin.models import equity_historical as _m1  # noqa: F401, E402
-from unifin.models import equity_search as _m2  # noqa: F401, E402
 from unifin.models import equity_profile as _m3  # noqa: F401, E402
 from unifin.models import equity_quote as _m4  # noqa: F401, E402
-from unifin.models import balance_sheet as _m5  # noqa: F401, E402
-from unifin.models import income_statement as _m6  # noqa: F401, E402
-from unifin.models import cash_flow as _m7  # noqa: F401, E402
-from unifin.models import index_historical as _m8  # noqa: F401, E402
+from unifin.models import equity_search as _m2  # noqa: F401, E402
 from unifin.models import etf_search as _m9  # noqa: F401, E402
+from unifin.models import income_statement as _m6  # noqa: F401, E402
+from unifin.models import index_historical as _m8  # noqa: F401, E402
 from unifin.models import trade_calendar as _m10  # noqa: F401, E402
 
 # ── Register providers ──
@@ -57,7 +57,9 @@ except ImportError:
     pass
 
 # ── Expose SDK namespaces ──
-from unifin.sdk import equity  # noqa: F401, E402
-from unifin.sdk import index  # noqa: F401, E402
-from unifin.sdk import etf  # noqa: F401, E402
-from unifin.sdk import market  # noqa: F401, E402
+from unifin.sdk import (
+    equity,  # noqa: F401, E402
+    etf,  # noqa: F401, E402
+    index,  # noqa: F401, E402
+    market,  # noqa: F401, E402
+)

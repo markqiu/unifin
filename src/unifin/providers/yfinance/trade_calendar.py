@@ -46,14 +46,20 @@ class YFinanceTradeCalendarFetcher(Fetcher):
     provider_name: ClassVar[str] = "yfinance"
     model_name: ClassVar[str] = "trade_calendar"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XNYS, Exchange.XNAS,
-        Exchange.XSHG, Exchange.XSHE,
+        Exchange.XNYS,
+        Exchange.XNAS,
+        Exchange.XSHG,
+        Exchange.XSHE,
         Exchange.XHKG,
-        Exchange.XJPX, Exchange.XLON,
+        Exchange.XJPX,
+        Exchange.XLON,
         Exchange.XETR,
-        Exchange.XASX, Exchange.XKRX,
-        Exchange.XTSE, Exchange.XSES,
-        Exchange.XBOM, Exchange.XNSE,
+        Exchange.XASX,
+        Exchange.XKRX,
+        Exchange.XTSE,
+        Exchange.XSES,
+        Exchange.XBOM,
+        Exchange.XNSE,
         Exchange.XTAI,
     ]
 
@@ -104,10 +110,7 @@ class YFinanceTradeCalendarFetcher(Fetcher):
         dates = raw_data.get("dates", [])
         market = raw_data.get("market", "")
 
-        return [
-            {"date": d, "is_open": True, "market": market}
-            for d in dates
-        ]
+        return [{"date": d, "is_open": True, "market": market} for d in dates]
 
 
 provider_registry.register_fetcher(YFinanceTradeCalendarFetcher)

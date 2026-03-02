@@ -21,7 +21,7 @@ def search(
     query: str = "",
     limit: int | None = None,
     provider: str | None = None,
-) -> "pl.DataFrame":
+) -> pl.DataFrame:
     """Search for ETFs by name or keyword.
 
     Args:

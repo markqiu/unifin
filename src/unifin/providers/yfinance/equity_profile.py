@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any, ClassVar
 
 from pydantic import BaseModel
@@ -18,26 +17,50 @@ class YFinanceEquityProfileFetcher(Fetcher):
     provider_name: ClassVar[str] = "yfinance"
     model_name: ClassVar[str] = "equity_profile"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XNYS, Exchange.XNAS, Exchange.XASE, Exchange.ARCX,
-        Exchange.XSHG, Exchange.XSHE,
+        Exchange.XNYS,
+        Exchange.XNAS,
+        Exchange.XASE,
+        Exchange.ARCX,
+        Exchange.XSHG,
+        Exchange.XSHE,
         Exchange.XHKG,
-        Exchange.XJPX, Exchange.XLON, Exchange.XPAR, Exchange.XAMS,
-        Exchange.XETR, Exchange.XSWX, Exchange.XMIL,
-        Exchange.XSES, Exchange.XASX, Exchange.XKRX, Exchange.XTAI,
-        Exchange.XBOM, Exchange.XNSE, Exchange.XTSE,
+        Exchange.XJPX,
+        Exchange.XLON,
+        Exchange.XPAR,
+        Exchange.XAMS,
+        Exchange.XETR,
+        Exchange.XSWX,
+        Exchange.XMIL,
+        Exchange.XSES,
+        Exchange.XASX,
+        Exchange.XKRX,
+        Exchange.XTAI,
+        Exchange.XBOM,
+        Exchange.XNSE,
+        Exchange.XTSE,
     ]
 
     # Coverage metadata
     supported_fields: ClassVar[list[str]] = [
-        "symbol", "name", "legal_name", "exchange", "sector", "industry",
-        "employees", "description", "country", "city", "website",
-        "market_cap", "currency", "is_active",
+        "symbol",
+        "name",
+        "legal_name",
+        "exchange",
+        "sector",
+        "industry",
+        "employees",
+        "description",
+        "country",
+        "city",
+        "website",
+        "market_cap",
+        "currency",
+        "is_active",
     ]
     data_start_date: ClassVar[str] = ""
     data_delay: ClassVar[str] = "15min"
     notes: ClassVar[str] = (
-        "Does not provide CEO or list_date. "
-        "Non-US company profiles may have limited coverage."
+        "Does not provide CEO or list_date. Non-US company profiles may have limited coverage."
     )
 
     @staticmethod
@@ -64,24 +87,26 @@ class YFinanceEquityProfileFetcher(Fetcher):
         if not info.get("symbol"):
             return []
 
-        return [{
-            "symbol": info.get("symbol"),
-            "name": info.get("shortName") or info.get("longName"),
-            "legal_name": info.get("longName"),
-            "exchange": info.get("exchange"),
-            "sector": info.get("sector"),
-            "industry": info.get("industry"),
-            "employees": info.get("fullTimeEmployees"),
-            "description": info.get("longBusinessSummary"),
-            "country": info.get("country"),
-            "city": info.get("city"),
-            "website": info.get("website"),
-            "ceo": None,  # yfinance doesn't have CEO directly
-            "market_cap": info.get("marketCap"),
-            "currency": info.get("currency"),
-            "list_date": None,
-            "is_active": True,  # if accessible via yfinance, it's active
-        }]
+        return [
+            {
+                "symbol": info.get("symbol"),
+                "name": info.get("shortName") or info.get("longName"),
+                "legal_name": info.get("longName"),
+                "exchange": info.get("exchange"),
+                "sector": info.get("sector"),
+                "industry": info.get("industry"),
+                "employees": info.get("fullTimeEmployees"),
+                "description": info.get("longBusinessSummary"),
+                "country": info.get("country"),
+                "city": info.get("city"),
+                "website": info.get("website"),
+                "ceo": None,  # yfinance doesn't have CEO directly
+                "market_cap": info.get("marketCap"),
+                "currency": info.get("currency"),
+                "list_date": None,
+                "is_active": True,  # if accessible via yfinance, it's active
+            }
+        ]
 
 
 provider_registry.register_fetcher(YFinanceEquityProfileFetcher)

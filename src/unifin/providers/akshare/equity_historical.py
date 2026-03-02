@@ -34,11 +34,19 @@ class AKShareEquityHistoricalFetcher(Fetcher):
     provider_name: ClassVar[str] = "akshare"
     model_name: ClassVar[str] = "equity_historical"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XSHG, Exchange.XSHE, Exchange.XHKG,
+        Exchange.XSHG,
+        Exchange.XSHE,
+        Exchange.XHKG,
     ]
 
     supported_fields: ClassVar[list[str]] = [
-        "date", "open", "high", "low", "close", "volume", "amount",
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "amount",
     ]
     data_start_date: ClassVar[str] = "1990-12-19"
     data_delay: ClassVar[str] = "eod"

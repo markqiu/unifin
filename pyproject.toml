@@ -29,9 +29,9 @@ dependencies = [
 
 [project.optional-dependencies]
 yfinance = ["yfinance>=0.2.30"]
-eastmoney = ["EmQuantAPI>=1.0"]
+# eastmoney = ["EmQuantAPI>=1.0"]  # 暂时禁用，需要从东方财富官网下载
 akshare = ["akshare>=1.0"]
-all = ["unifin[yfinance,eastmoney,akshare]"]
+all = ["unifin[yfinance,akshare]"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

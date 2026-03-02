@@ -218,11 +218,11 @@ def to_unified_symbol(symbol: str, provider: str | None = None) -> str:
 #   - Index with caret: ^GSPC, ^HSI
 _VALID_SYMBOL_RE = re.compile(
     r"^("
-    r"\^[A-Z0-9]{2,10}"          # ^GSPC, ^HSI, ^N225
+    r"\^[A-Z0-9]{2,10}"  # ^GSPC, ^HSI, ^N225
     r"|[A-Z]{1,5}(\.[A-Z]{1,2})?"  # AAPL, BRK.B
-    r"|[A-Z]{1,5}\.[A-Z]{3,4}"   # AAPL.XNAS (ticker + MIC)
-    r"|\d{4,6}\.[A-Z]{2,4}"      # 000001.XSHE, 0700.XHKG, 600519.SS
-    r"|\d{4,6}"                   # 000001, 600519 (plain code)
+    r"|[A-Z]{1,5}\.[A-Z]{3,4}"  # AAPL.XNAS (ticker + MIC)
+    r"|\d{4,6}\.[A-Z]{2,4}"  # 000001.XSHE, 0700.XHKG, 600519.SS
+    r"|\d{4,6}"  # 000001, 600519 (plain code)
     r")$"
 )
 

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from unifin.core.fetcher import Fetcher
 from unifin.core.registry import provider_registry
-from unifin.core.types import Adjust, Exchange, Interval
+from unifin.core.types import Adjust, Exchange
 
 
 class EastMoneyEquityHistoricalFetcher(Fetcher):
@@ -41,8 +41,12 @@ class EastMoneyEquityHistoricalFetcher(Fetcher):
 
         return {
             "symbol": getattr(query, "symbol", ""),
-            "start_date": start.strftime("%Y%m%d") if isinstance(start, date) else str(start).replace("-", ""),
-            "end_date": end.strftime("%Y%m%d") if isinstance(end, date) else str(end).replace("-", ""),
+            "start_date": start.strftime("%Y%m%d")
+            if isinstance(start, date)
+            else str(start).replace("-", ""),
+            "end_date": end.strftime("%Y%m%d")
+            if isinstance(end, date)
+            else str(end).replace("-", ""),
             "adjust_flag": adjust_flag,
             "indicators": "OPEN,CLOSE,HIGH,LOW,VOLUME,AMOUNT",
         }
@@ -84,12 +88,24 @@ class EastMoneyEquityHistoricalFetcher(Fetcher):
                         for i, dt in enumerate(data.Dates):
                             row = {
                                 "date": dt,
-                                "open": indicators[0][i] if len(indicators) > 0 and len(indicators[0]) > i else None,
-                                "close": indicators[1][i] if len(indicators) > 1 and len(indicators[1]) > i else None,
-                                "high": indicators[2][i] if len(indicators) > 2 and len(indicators[2]) > i else None,
-                                "low": indicators[3][i] if len(indicators) > 3 and len(indicators[3]) > i else None,
-                                "volume": indicators[4][i] if len(indicators) > 4 and len(indicators[4]) > i else None,
-                                "amount": indicators[5][i] if len(indicators) > 5 and len(indicators[5]) > i else None,
+                                "open": indicators[0][i]
+                                if len(indicators) > 0 and len(indicators[0]) > i
+                                else None,
+                                "close": indicators[1][i]
+                                if len(indicators) > 1 and len(indicators[1]) > i
+                                else None,
+                                "high": indicators[2][i]
+                                if len(indicators) > 2 and len(indicators[2]) > i
+                                else None,
+                                "low": indicators[3][i]
+                                if len(indicators) > 3 and len(indicators[3]) > i
+                                else None,
+                                "volume": indicators[4][i]
+                                if len(indicators) > 4 and len(indicators[4]) > i
+                                else None,
+                                "amount": indicators[5][i]
+                                if len(indicators) > 5 and len(indicators[5]) > i
+                                else None,
                             }
                             result.append(row)
             return result
@@ -114,15 +130,17 @@ class EastMoneyEquityHistoricalFetcher(Fetcher):
                     except ValueError:
                         pass
 
-            results.append({
-                "date": dt,
-                "open": _to_float(row.get("open")),
-                "high": _to_float(row.get("high")),
-                "low": _to_float(row.get("low")),
-                "close": _to_float(row.get("close")),
-                "volume": _to_int(row.get("volume")),
-                "amount": _to_float(row.get("amount")),
-            })
+            results.append(
+                {
+                    "date": dt,
+                    "open": _to_float(row.get("open")),
+                    "high": _to_float(row.get("high")),
+                    "low": _to_float(row.get("low")),
+                    "close": _to_float(row.get("close")),
+                    "volume": _to_int(row.get("volume")),
+                    "amount": _to_float(row.get("amount")),
+                }
+            )
 
         return results
 

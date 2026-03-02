@@ -18,22 +18,52 @@ class YFinanceEquityQuoteFetcher(Fetcher):
     provider_name: ClassVar[str] = "yfinance"
     model_name: ClassVar[str] = "equity_quote"
     supported_exchanges: ClassVar[list[Exchange]] = [
-        Exchange.XNYS, Exchange.XNAS, Exchange.XASE, Exchange.ARCX,
-        Exchange.XSHG, Exchange.XSHE,
+        Exchange.XNYS,
+        Exchange.XNAS,
+        Exchange.XASE,
+        Exchange.ARCX,
+        Exchange.XSHG,
+        Exchange.XSHE,
         Exchange.XHKG,
-        Exchange.XJPX, Exchange.XLON, Exchange.XPAR, Exchange.XAMS,
-        Exchange.XETR, Exchange.XSWX, Exchange.XMIL,
-        Exchange.XSES, Exchange.XASX, Exchange.XKRX, Exchange.XTAI,
-        Exchange.XBOM, Exchange.XNSE, Exchange.XTSE,
+        Exchange.XJPX,
+        Exchange.XLON,
+        Exchange.XPAR,
+        Exchange.XAMS,
+        Exchange.XETR,
+        Exchange.XSWX,
+        Exchange.XMIL,
+        Exchange.XSES,
+        Exchange.XASX,
+        Exchange.XKRX,
+        Exchange.XTAI,
+        Exchange.XBOM,
+        Exchange.XNSE,
+        Exchange.XTSE,
     ]
 
     # Coverage metadata
     supported_fields: ClassVar[list[str]] = [
-        "symbol", "name", "exchange", "asset_type",
-        "last_price", "open", "high", "low", "close", "prev_close",
-        "volume", "change", "change_percent",
-        "bid", "bid_size", "ask", "ask_size",
-        "year_high", "year_low", "market_cap", "timestamp",
+        "symbol",
+        "name",
+        "exchange",
+        "asset_type",
+        "last_price",
+        "open",
+        "high",
+        "low",
+        "close",
+        "prev_close",
+        "volume",
+        "change",
+        "change_percent",
+        "bid",
+        "bid_size",
+        "ask",
+        "ask_size",
+        "year_high",
+        "year_low",
+        "market_cap",
+        "timestamp",
     ]
     data_start_date: ClassVar[str] = ""
     data_delay: ClassVar[str] = "15min"
@@ -75,30 +105,32 @@ class YFinanceEquityQuoteFetcher(Fetcher):
             except (TypeError, ValueError, OSError):
                 pass
 
-        return [{
-            "symbol": info.get("symbol"),
-            "name": info.get("shortName") or info.get("longName"),
-            "exchange": info.get("exchange"),
-            "asset_type": info.get("quoteType"),
-            "last_price": info.get("regularMarketPrice") or info.get("currentPrice"),
-            "open": info.get("regularMarketOpen") or info.get("open"),
-            "high": info.get("regularMarketDayHigh") or info.get("dayHigh"),
-            "low": info.get("regularMarketDayLow") or info.get("dayLow"),
-            "close": info.get("regularMarketPreviousClose") or info.get("previousClose"),
-            "prev_close": info.get("regularMarketPreviousClose") or info.get("previousClose"),
-            "volume": _safe_int(info.get("regularMarketVolume") or info.get("volume")),
-            "amount": None,
-            "change": info.get("regularMarketChange"),
-            "change_percent": _to_ratio(info.get("regularMarketChangePercent")),
-            "bid": info.get("bid"),
-            "bid_size": _safe_int(info.get("bidSize")),
-            "ask": info.get("ask"),
-            "ask_size": _safe_int(info.get("askSize")),
-            "year_high": info.get("fiftyTwoWeekHigh"),
-            "year_low": info.get("fiftyTwoWeekLow"),
-            "market_cap": info.get("marketCap"),
-            "timestamp": ts,
-        }]
+        return [
+            {
+                "symbol": info.get("symbol"),
+                "name": info.get("shortName") or info.get("longName"),
+                "exchange": info.get("exchange"),
+                "asset_type": info.get("quoteType"),
+                "last_price": info.get("regularMarketPrice") or info.get("currentPrice"),
+                "open": info.get("regularMarketOpen") or info.get("open"),
+                "high": info.get("regularMarketDayHigh") or info.get("dayHigh"),
+                "low": info.get("regularMarketDayLow") or info.get("dayLow"),
+                "close": info.get("regularMarketPreviousClose") or info.get("previousClose"),
+                "prev_close": info.get("regularMarketPreviousClose") or info.get("previousClose"),
+                "volume": _safe_int(info.get("regularMarketVolume") or info.get("volume")),
+                "amount": None,
+                "change": info.get("regularMarketChange"),
+                "change_percent": _to_ratio(info.get("regularMarketChangePercent")),
+                "bid": info.get("bid"),
+                "bid_size": _safe_int(info.get("bidSize")),
+                "ask": info.get("ask"),
+                "ask_size": _safe_int(info.get("askSize")),
+                "year_high": info.get("fiftyTwoWeekHigh"),
+                "year_low": info.get("fiftyTwoWeekLow"),
+                "market_cap": info.get("marketCap"),
+                "timestamp": ts,
+            }
+        ]
 
 
 def _safe_int(v: Any) -> int | None:

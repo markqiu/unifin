@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "unifin"
+version = "0.1.0"
+description = "Unified intelligent global financial data platform"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "unifin contributors" }]
+keywords = ["finance", "data", "market", "stock", "quant"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "polars>=1.0",
+    "duckdb>=1.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+yfinance = ["yfinance>=0.2.30"]
+eastmoney = ["EmQuantAPI>=1.0"]
+akshare = ["akshare>=1.0"]
+all = ["unifin[yfinance,eastmoney,akshare]"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/unifin"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

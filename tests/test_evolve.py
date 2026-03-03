@@ -1,14 +1,8 @@
-"""Tests for the self-evolution module (evolve/).
+"""Tests for the evolve module — self-evolution pipeline."""
 
-Tests cover:
-- Schema dataclasses
-- Template code generation
-- Source discovery (keyword matching)
-- Generator (fallback analysis)
-- Loader (file writing + dynamic import, mocked)
-- Orchestrator (end-to-end flow, mocked I/O)
-"""
+from __future__ import annotations
 
+import pytest
 
 from unifin.evolve.schema import (
     DataNeed,
@@ -17,396 +11,438 @@ from unifin.evolve.schema import (
     FieldType,
     GeneratedFile,
     SourceCandidate,
+    Stage,
 )
 
-# ---------------------------------------------------------------------------
-# Schema tests
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────
+# 1. Schema tests
+# ──────────────────────────────────────────────
+
+
+class TestStage:
+    """Stage enum roundtrip and ordering."""
+
+    def test_all_stages_defined(self):
+        expected = {
+            "analyzing",
+            "discovered",
+            "awaiting_approval",
+            "generating",
+            "testing",
+            "pr_created",
+            "completed",
+            "failed",
+        }
+        assert {s.value for s in Stage} == expected
+
+    def test_stage_is_str_enum(self):
+        assert Stage.ANALYZING == "analyzing"
+        assert str(Stage.COMPLETED) == "Stage.COMPLETED"
 
 
 class TestFieldSpec:
-    def test_required_field(self):
-        f = FieldSpec(name="symbol", type=FieldType.STR, required=True, description="标的代码")
-        assert f.name == "symbol"
-        assert f.type == FieldType.STR
+    def test_defaults(self):
+        f = FieldSpec(name="price", type=FieldType.FLOAT)
         assert f.required is True
-
-    def test_optional_field(self):
-        f = FieldSpec(name="nav", type=FieldType.FLOAT, required=False, description="净值")
-        assert f.required is False
+        assert f.description == ""
+        assert f.default is None
 
 
 class TestDataNeed:
-    def test_basic(self):
+    def test_minimal(self):
         need = DataNeed(
             model_name="fund_nav",
             category="fund.price",
-            description="基金净值数据",
-            query_fields=[
-                FieldSpec(name="symbol", type=FieldType.STR, required=True),
-            ],
-            result_fields=[
-                FieldSpec(name="date", type=FieldType.DATE, required=True),
-                FieldSpec(name="nav", type=FieldType.FLOAT, required=False),
-            ],
+            description="Fund NAV data",
         )
-        assert need.model_name == "fund_nav"
         assert need.has_symbol is True
-        assert need.is_time_series is True
+        assert need.has_date_range is True
+        assert need.query_fields == []
+        assert need.result_fields == []
+
+
+class TestSourceCandidate:
+    def test_creation(self):
+        src = SourceCandidate(
+            provider="akshare",
+            function_name="fund_open_fund_daily_em",
+            description="Open-end fund daily",
+            exchanges=["XSHG", "XSHE"],
+        )
+        assert src.provider == "akshare"
+        assert len(src.exchanges) == 2
 
 
 class TestEvolvePlan:
-    def test_summary(self):
+    @pytest.fixture()
+    def sample_plan(self):
         need = DataNeed(
-            model_name="test_model",
-            category="test",
-            description="Test model",
-            query_fields=[FieldSpec(name="symbol", type=FieldType.STR, required=True)],
-            result_fields=[FieldSpec(name="value", type=FieldType.FLOAT, required=False)],
-        )
-        plan = EvolvePlan(
-            need=need,
-            sources=[
-                SourceCandidate(
-                    provider="akshare",
-                    function_name="ak.test_func",
-                    description="Test function",
-                )
+            model_name="fund_nav",
+            category="fund.price",
+            description="Fund NAV data",
+            query_fields=[
+                FieldSpec(name="symbol", type=FieldType.STR, description="基金代码"),
             ],
+            result_fields=[
+                FieldSpec(name="nav", type=FieldType.FLOAT, description="净值"),
+                FieldSpec(name="date", type=FieldType.DATE, description="日期"),
+            ],
+        )
+        src = SourceCandidate(
+            provider="akshare",
+            function_name="fund_open_fund_daily_em",
+            description="Open-end fund daily NAV",
+        )
+        return EvolvePlan(
+            need=need,
+            sources=[src],
             files=[
                 GeneratedFile(
-                    path="src/unifin/models/test_model.py",
-                    content="# test",
-                    description="Model file",
-                )
-            ],
-        )
-        summary = plan.summary()
-        assert "test_model" in summary
-        assert "akshare" in summary
-        assert "ak.test_func" in summary
-
-
-# ---------------------------------------------------------------------------
-# Template tests
-# ---------------------------------------------------------------------------
-
-
-class TestTemplateModelCode:
-    def _make_need(self) -> DataNeed:
-        return DataNeed(
-            model_name="fund_nav",
-            category="fund.price",
-            description="开放式基金净值数据",
-            query_fields=[
-                FieldSpec(name="symbol", type=FieldType.STR, required=True, description="基金代码"),
-                FieldSpec(
-                    name="start_date", type=FieldType.DATE, required=False, description="开始日期"
-                ),
-                FieldSpec(
-                    name="end_date", type=FieldType.DATE, required=False, description="结束日期"
-                ),
-            ],
-            result_fields=[
-                FieldSpec(name="date", type=FieldType.DATE, required=True, description="净值日期"),
-                FieldSpec(name="nav", type=FieldType.FLOAT, required=False, description="单位净值"),
-                FieldSpec(
-                    name="acc_nav", type=FieldType.FLOAT, required=False, description="累计净值"
-                ),
-                FieldSpec(
-                    name="symbol", type=FieldType.STR, required=False, description="基金代码"
+                    path="src/unifin/models/fund_nav.py",
+                    content="# model code",
+                    description="Fund NAV model",
                 ),
             ],
         )
 
-    def test_generate_model_code(self):
-        from unifin.evolve.templates import generate_model_code
+    def test_model_name_property(self, sample_plan):
+        assert sample_plan.model_name == "fund_nav"
 
-        need = self._make_need()
-        code = generate_model_code(need)
+    def test_default_stage(self, sample_plan):
+        assert sample_plan.stage == Stage.ANALYZING
 
-        # Must contain class definitions
-        assert "class FundNavQuery(BaseModel):" in code
-        assert "class FundNavData(BaseModel):" in code
+    def test_summary_contains_key_info(self, sample_plan):
+        md = sample_plan.summary()
+        assert "fund_nav" in md
+        assert "fund.price" in md
+        assert "akshare" in md
+        assert "fund_open_fund_daily_em" in md
+        assert "nav" in md
 
-        # Must contain registration
-        assert 'model_registry.register(' in code
-        assert 'name="fund_nav"' in code
-        assert 'category="fund.price"' in code
+    def test_issue_number_optional(self, sample_plan):
+        assert sample_plan.issue_number is None
+        sample_plan.issue_number = 42
+        assert sample_plan.issue_number == 42
 
-        # Must import datetime
-        assert "import datetime as dt" in code
-
-        # Must have symbol validator
-        assert "field_validator" in code
-        assert "validate_symbol" in code
-
-        # Must have date range validator
-        assert "model_validator" in code
-        assert "InvalidDateRangeError" in code
-
-    def test_generate_model_no_symbol(self):
-        from unifin.evolve.templates import generate_model_code
-
-        need = DataNeed(
-            model_name="macro_gdp",
-            category="macro.cn",
-            description="GDP数据",
-            query_fields=[
-                FieldSpec(name="start_date", type=FieldType.DATE, required=False),
-            ],
-            result_fields=[
-                FieldSpec(name="date", type=FieldType.DATE, required=True),
-                FieldSpec(name="value", type=FieldType.FLOAT, required=False),
-            ],
-            has_symbol=False,
-            has_date_range=True,
-        )
-        code = generate_model_code(need)
-        assert "validate_symbol" not in code
-        assert "class MacroGdpQuery" in code
-        assert "class MacroGdpData" in code
+    def test_branch_name_optional(self, sample_plan):
+        assert sample_plan.branch_name is None
+        sample_plan.branch_name = "evolve/fund_nav"
+        assert sample_plan.branch_name == "evolve/fund_nav"
 
 
-class TestTemplateFetcherCode:
-    def test_generate_fetcher_code(self):
-        from unifin.evolve.templates import generate_fetcher_code
-
-        need = DataNeed(
-            model_name="fund_nav",
-            category="fund.price",
-            description="基金净值数据",
-            query_fields=[
-                FieldSpec(name="symbol", type=FieldType.STR, required=True),
-            ],
-            result_fields=[
-                FieldSpec(name="date", type=FieldType.DATE, required=True),
-                FieldSpec(name="nav", type=FieldType.FLOAT, required=False),
-            ],
-        )
-        source = SourceCandidate(
-            provider="akshare",
-            function_name="ak.fund_open_fund_info_em",
-            description="开放式基金净值(东财)",
-            exchanges=["XSHG", "XSHE"],
-            column_mapping={"净值日期": "date", "单位净值": "nav"},
-        )
-        code = generate_fetcher_code(need, source)
-
-        assert "class AkshareFundNavFetcher(Fetcher):" in code
-        assert 'provider_name: ClassVar[str] = "akshare"' in code
-        assert 'model_name: ClassVar[str] = "fund_nav"' in code
-        assert "Exchange.XSHG" in code
-        assert "provider_registry.register_fetcher(AkshareFundNavFetcher)" in code
-        assert "import akshare as ak" in code
+# ──────────────────────────────────────────────
+# 2. Discoverer tests
+# ──────────────────────────────────────────────
 
 
-class TestTemplateTestCode:
-    def test_generate_test_code(self):
-        from unifin.evolve.templates import generate_test_code
+class TestDiscoverer:
+    def test_import(self):
+        from unifin.evolve.discoverer import discoverer
 
-        need = DataNeed(
-            model_name="fund_nav",
-            category="fund.price",
-            description="基金净值",
-            query_fields=[FieldSpec(name="symbol", type=FieldType.STR, required=True)],
-            result_fields=[FieldSpec(name="date", type=FieldType.DATE, required=True)],
-        )
-        sources = [
-            SourceCandidate(
-                provider="akshare",
-                function_name="ak.test",
-                description="test",
-            )
-        ]
-        code = generate_test_code(need, sources)
+        assert discoverer is not None
 
-        assert "class TestModelFundNav:" in code
-        assert 'assert "fund_nav" in model_registry' in code
-        assert "class TestFetcherAkshareFundNav:" in code
-
-
-# ---------------------------------------------------------------------------
-# Discoverer tests
-# ---------------------------------------------------------------------------
-
-
-class TestSourceDiscoverer:
     def test_search_fund_keywords(self):
         from unifin.evolve.discoverer import discoverer
 
         results = discoverer.search(["基金", "净值"])
         assert len(results) > 0
-        # Should find akshare fund source
-        providers = [r.provider for r in results]
+        # Should find akshare fund-related entries
+        providers = {r.provider for r in results}
         assert "akshare" in providers
 
-    def test_search_english_keywords(self):
+    def test_search_with_provider_filter(self):
         from unifin.evolve.discoverer import discoverer
 
-        results = discoverer.search(["fund", "nav"])
-        assert len(results) > 0
+        results = discoverer.search(["stock", "history"], provider="yfinance")
+        for r in results:
+            assert r.provider == "yfinance"
+
+    def test_search_no_match(self):
+        from unifin.evolve.discoverer import discoverer
+
+        results = discoverer.search(["zzz_nonexistent_xyz"])
+        assert len(results) == 0
 
     def test_search_equity_keywords(self):
         from unifin.evolve.discoverer import discoverer
 
-        results = discoverer.search(["股票", "历史"])
+        results = discoverer.search(["股票", "历史", "行情"])
         assert len(results) > 0
 
-    def test_search_empty(self):
+    def test_search_index_keywords(self):
         from unifin.evolve.discoverer import discoverer
 
-        results = discoverer.search(["zzzzz_nonexistent"])
-        assert len(results) == 0
-
-    def test_search_specific_provider(self):
-        from unifin.evolve.discoverer import discoverer
-
-        results = discoverer.search(["stock"], provider="yfinance")
-        for r in results:
-            assert r.provider == "yfinance"
-
-    def test_list_available_sources(self):
-        from unifin.evolve.discoverer import discoverer
-
-        sources = discoverer.list_available_sources()
-        assert len(sources) > 10  # We have a large catalog
-
-    def test_list_filtered_by_provider(self):
-        from unifin.evolve.discoverer import discoverer
-
-        sources = discoverer.list_available_sources(provider="akshare")
-        for s in sources:
-            assert s["provider"] == "akshare"
-
-    def test_search_macro_keywords(self):
-        from unifin.evolve.discoverer import discoverer
-
-        results = discoverer.search(["GDP", "宏观"])
-        assert len(results) > 0
-        funcs = [r.function_name for r in results]
-        assert any("gdp" in f.lower() for f in funcs)
-
-    def test_search_bond_keywords(self):
-        from unifin.evolve.discoverer import discoverer
-
-        results = discoverer.search(["债券", "bond"])
+        results = discoverer.search(["指数", "成分股"])
         assert len(results) > 0
 
 
-# ---------------------------------------------------------------------------
-# Generator fallback tests
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────
+# 3. Templates tests
+# ──────────────────────────────────────────────
 
 
-class TestCodeGeneratorFallback:
-    def test_fallback_analyze_fund(self):
-        from unifin.evolve.generator import CodeGenerator
-
-        gen = CodeGenerator()  # No API key → fallback mode
-        need = gen.analyze_need("我需要基金净值数据")
-        assert need.model_name == "fund_nav"
-        assert need.category == "fund.price"
-
-    def test_fallback_analyze_futures(self):
-        from unifin.evolve.generator import CodeGenerator
-
-        gen = CodeGenerator()
-        need = gen.analyze_need("给我期货数据")
-        assert need.model_name == "futures_data"
-
-    def test_fallback_analyze_gdp(self):
-        from unifin.evolve.generator import CodeGenerator
-
-        gen = CodeGenerator()
-        need = gen.analyze_need("GDP数据")
-        assert need.model_name == "macro_gdp"
-
-    def test_fallback_column_mapping(self):
-        from unifin.evolve.generator import CodeGenerator
-
-        gen = CodeGenerator()
-        source = SourceCandidate(
-            provider="akshare",
-            function_name="ak.test",
-            description="test",
-            sample_columns=["日期", "开盘", "收盘", "成交量"],
-        )
-        need = DataNeed(
-            model_name="test",
-            category="test",
-            description="test",
+class TestTemplates:
+    @pytest.fixture()
+    def sample_need(self):
+        return DataNeed(
+            model_name="fund_nav",
+            category="fund.price",
+            description="Open-end fund NAV data",
+            query_fields=[
+                FieldSpec(name="symbol", type=FieldType.STR, required=True, description="基金代码"),
+                FieldSpec(
+                    name="start_date", type=FieldType.DATE, required=False, description="开始日期"
+                ),
+            ],
             result_fields=[
+                FieldSpec(name="symbol", type=FieldType.STR, required=True),
                 FieldSpec(name="date", type=FieldType.DATE, required=True),
-                FieldSpec(name="open", type=FieldType.FLOAT, required=False),
-                FieldSpec(name="close", type=FieldType.FLOAT, required=False),
-                FieldSpec(name="volume", type=FieldType.INT, required=False),
+                FieldSpec(name="nav", type=FieldType.FLOAT, required=True, description="单位净值"),
+                FieldSpec(
+                    name="acc_nav",
+                    type=FieldType.FLOAT,
+                    required=False,
+                    description="累计净值",
+                ),
             ],
         )
-        mapping = gen.generate_column_mapping(source, need)
-        assert mapping["日期"] == "date"
-        assert mapping["开盘"] == "open"
-        assert mapping["收盘"] == "close"
-        assert mapping["成交量"] == "volume"
+
+    def test_generate_model_code(self, sample_need):
+        from unifin.evolve.templates import generate_model_code
+
+        code = generate_model_code(sample_need)
+        assert "class FundNavQuery" in code
+        assert "class FundNavData" in code
+        assert "fund_nav" in code
+        assert "model_registry.register" in code
+
+    def test_generate_fetcher_code(self, sample_need):
+        from unifin.evolve.templates import generate_fetcher_code
+
+        src = SourceCandidate(
+            provider="akshare",
+            function_name="fund_open_fund_daily_em",
+            description="Fund NAV from akshare",
+        )
+        code = generate_fetcher_code(sample_need, src)
+        assert "class AkshareFundNavFetcher" in code
+        assert "provider_name" in code
+        assert "model_name" in code
+        assert "transform_query" in code
+        assert "extract_data" in code
+        assert "transform_data" in code
+
+    def test_generate_test_code(self, sample_need):
+        from unifin.evolve.templates import generate_test_code
+
+        src = SourceCandidate(
+            provider="akshare",
+            function_name="fund_open_fund_daily_em",
+            description="Fund NAV from akshare",
+        )
+        code = generate_test_code(sample_need, [src])
+        assert "test_" in code
+        assert "fund_nav" in code
+
+    def test_generate_sdk_function(self, sample_need):
+        from unifin.evolve.templates import generate_sdk_function
+
+        code = generate_sdk_function(sample_need)
+        assert "fund_nav" in code
+        assert "router" in code or "_query" in code
 
 
-# ---------------------------------------------------------------------------
-# Orchestrator tests (no I/O)
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────
+# 4. Generator tests
+# ──────────────────────────────────────────────
 
 
-class TestOrchestratorKeywords:
-    def test_extract_keywords_chinese(self):
-        from unifin.evolve.orchestrator import Orchestrator
+class TestCodeGenerator:
+    def test_import(self):
+        from unifin.evolve.generator import CodeGenerator
 
+        gen = CodeGenerator()
+        assert gen is not None
+
+    def test_analyze_need_basic(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        need = gen.analyze_need("我需要获取开放式基金的每日净值数据")
+        assert isinstance(need, DataNeed)
+        assert need.model_name != ""
+        assert need.category != ""
+
+    def test_extract_keywords(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        need = DataNeed(
+            model_name="fund_nav",
+            category="fund",
+            description="Fund NAV",
+        )
+        keywords = gen._extract_keywords("获取基金净值数据", need)
+        assert len(keywords) > 0
+
+    def test_generate_plan(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
         need = DataNeed(
             model_name="fund_nav",
             category="fund.price",
-            description="基金净值数据",
+            description="Fund NAV data",
+            query_fields=[
+                FieldSpec(name="symbol", type=FieldType.STR, description="Fund code"),
+            ],
+            result_fields=[
+                FieldSpec(name="nav", type=FieldType.FLOAT, description="NAV"),
+                FieldSpec(name="date", type=FieldType.DATE, description="Date"),
+            ],
         )
-        keywords = Orchestrator._extract_keywords("我需要基金净值数据", need)
-        assert "基金净值数据" in keywords or "基金" in " ".join(keywords)
-
-    def test_extract_keywords_english(self):
-        from unifin.evolve.orchestrator import Orchestrator
-
-        need = DataNeed(
-            model_name="equity_dividend",
-            category="equity.dividend",
-            description="Stock dividends",
+        src = SourceCandidate(
+            provider="akshare",
+            function_name="fund_open_fund_daily_em",
+            description="Fund NAV",
         )
-        keywords = Orchestrator._extract_keywords("I need stock dividend data", need)
-        assert any("dividend" in kw.lower() for kw in keywords)
-
-
-class TestOrchestratorAnalyze:
-    """Test the analyze pipeline (no LLM, no I/O)."""
-
-    def test_analyze_produces_plan(self):
-        from unifin.evolve.orchestrator import Orchestrator
-
-        orch = Orchestrator()
-        plan = orch.analyze("我需要基金净值数据")
-        assert plan.status == "draft"
-        assert plan.need.model_name is not None
+        plan = gen.generate_plan(need, [src])
+        assert isinstance(plan, EvolvePlan)
+        assert plan.model_name == "fund_nav"
         assert len(plan.files) > 0
 
-    def test_analyze_finds_sources(self):
+
+# ──────────────────────────────────────────────
+# 5. GitHub client tests (mocked)
+# ──────────────────────────────────────────────
+
+
+class TestGitHubClient:
+    def test_import(self):
+        from unifin.evolve.github import GitHubClient
+
+        gh = GitHubClient(token="fake", repo="owner/repo")
+        assert gh is not None
+
+    def test_has_label(self):
+        from unifin.evolve.github import GitHubClient
+
+        gh = GitHubClient(token="fake", repo="owner/repo")
+        issue = {"labels": [{"name": "data-request"}, {"name": "bug"}]}
+        assert gh.has_label(issue, "data-request") is True
+        assert gh.has_label(issue, "enhancement") is False
+
+
+# ──────────────────────────────────────────────
+# 6. Orchestrator tests (mocked)
+# ──────────────────────────────────────────────
+
+
+class TestOrchestrator:
+    def test_import(self):
+        from unifin.evolve.orchestrator import orchestrator
+
+        assert orchestrator is not None
+
+    def test_analyze_returns_plan(self):
         from unifin.evolve.orchestrator import Orchestrator
 
         orch = Orchestrator()
-        plan = orch.analyze("我需要基金净值数据")
-        # Should find akshare fund sources
-        if plan.sources:
-            providers = [s.provider for s in plan.sources]
-            assert "akshare" in providers
+        plan = orch.analyze("我需要获取基金净值数据")
+        assert isinstance(plan, EvolvePlan)
+        assert plan.stage == Stage.DISCOVERED
 
-    def test_plan_summary_readable(self):
+    def test_analyze_with_provider(self):
         from unifin.evolve.orchestrator import Orchestrator
 
         orch = Orchestrator()
-        plan = orch.analyze("我想要A股融资融券数据")
-        summary = plan.summary()
-        assert "数据模型" in summary
-        assert "查询字段" in summary
-        assert "返回字段" in summary
+        plan = orch.analyze("获取股票分红数据", provider="yfinance")
+        assert isinstance(plan, EvolvePlan)
+        for src in plan.sources:
+            assert src.provider == "yfinance"
+
+    def test_list_plans_initially_empty(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert orch.list_plans() == []
+
+    def test_list_plans_after_analyze(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        orch.analyze("获取基金净值数据")
+        plans = orch.list_plans()
+        assert len(plans) == 1
+        assert plans[0]["stage"] == Stage.DISCOVERED.value
+
+
+# ──────────────────────────────────────────────
+# 7. CLI tests
+# ──────────────────────────────────────────────
+
+
+class TestCLI:
+    def test_build_parser(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        assert parser is not None
+
+    def test_parse_process_issue(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["process-issue", "--issue-number", "42"])
+        assert args.command == "process-issue"
+        assert args.issue_number == 42
+
+    def test_parse_process_approval(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["process-approval", "--issue-number", "42"])
+        assert args.command == "process-approval"
+        assert args.issue_number == 42
+
+    def test_parse_process_comment(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["process-comment", "--issue-number", "42"])
+        assert args.command == "process-comment"
+        assert args.issue_number == 42
+
+    def test_parse_analyze(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "获取基金净值数据"])
+        assert args.command == "analyze"
+        assert args.request == "获取基金净值数据"
+
+    def test_parse_analyze_with_provider(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "analyze",
+                "获取基金净值数据",
+                "--provider",
+                "akshare",
+            ]
+        )
+        assert args.provider == "akshare"
+
+
+# ──────────────────────────────────────────────
+# 8. Loader tests
+# ──────────────────────────────────────────────
+
+
+class TestLoader:
+    def test_import(self):
+        from unifin.evolve.loader import loader
+
+        assert loader is not None

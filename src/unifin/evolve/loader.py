@@ -2,12 +2,8 @@
 
 After the CodeGenerator produces files, the Loader:
 1. Writes files to disk.
-2. Dynamically imports and executes them (triggering model_registry.register
-   and provider_registry.register_fetcher).
+2. Dynamically imports and executes them (triggering self-registration).
 3. Updates __init__.py to ensure persistence across restarts.
-4. Optionally restarts the FastAPI endpoint registration.
-
-This is what makes "add a model → immediately queryable" possible.
 """
 
 from __future__ import annotations
@@ -26,7 +22,6 @@ logger = logging.getLogger("unifin")
 
 def _project_root() -> Path:
     """Return the project root (parent of src/)."""
-    # unifin package is at src/unifin/__init__.py
     import unifin
 
     pkg_dir = Path(unifin.__file__).parent  # src/unifin/
@@ -37,10 +32,7 @@ class HotLoader:
     """Write generated files and hot-register them into the running process."""
 
     def execute_plan(self, plan: EvolvePlan) -> dict[str, Any]:
-        """Execute a confirmed plan: write files, import, register.
-
-        Returns a report dict with success/failure details.
-        """
+        """Execute a confirmed plan: write files, import, register."""
         root = _project_root()
         report: dict[str, Any] = {
             "model_name": plan.model_name,
@@ -60,7 +52,7 @@ class HotLoader:
                 report["files_failed"].append({"path": gf.path, "error": str(e)})
 
         if report["files_failed"]:
-            plan.status = "failed"
+            plan.stage = plan.stage  # keep current stage
             return report
 
         # 2. Dynamic import — model first, then fetchers
@@ -72,7 +64,6 @@ class HotLoader:
         except Exception as e:
             logger.error("Dynamic import failed: %s", e)
             report["files_failed"].append({"path": "<import>", "error": str(e)})
-            plan.status = "failed"
             return report
 
         # 3. Update __init__.py for persistence
@@ -89,14 +80,12 @@ class HotLoader:
         except Exception as e:
             logger.warning("Failed to update provider __init__.py: %s", e)
 
-        plan.status = "executed"
         return report
 
     # ── File I/O ──
 
     @staticmethod
     def _write_file(root: Path, gf: GeneratedFile) -> None:
-        """Write a generated file to disk."""
         abs_path = root / gf.path
         abs_path.parent.mkdir(parents=True, exist_ok=True)
         abs_path.write_text(gf.content, encoding="utf-8")
@@ -106,24 +95,17 @@ class HotLoader:
 
     @staticmethod
     def _import_model(model_name: str) -> None:
-        """Dynamically import a model module to trigger registration."""
         module_name = f"unifin.models.{model_name}"
-
-        # Remove from cache if already imported (allow re-registration)
         if module_name in sys.modules:
             del sys.modules[module_name]
-
         importlib.import_module(module_name)
         logger.info("Dynamically imported model: %s", module_name)
 
     @staticmethod
     def _import_fetcher(provider: str, model_name: str) -> None:
-        """Dynamically import a fetcher module to trigger registration."""
         module_name = f"unifin.providers.{provider}.{model_name}"
-
         if module_name in sys.modules:
             del sys.modules[module_name]
-
         importlib.import_module(module_name)
         logger.info("Dynamically imported fetcher: %s", module_name)
 
@@ -131,25 +113,20 @@ class HotLoader:
 
     @staticmethod
     def _update_init_py(root: Path, plan: EvolvePlan) -> None:
-        """Add model import to unifin/__init__.py so it survives restarts."""
         init_path = root / "src" / "unifin" / "__init__.py"
         content = init_path.read_text(encoding="utf-8")
 
         model_name = plan.need.model_name
-        import_line = f"from unifin.models import {model_name}"  # noqa marker added below
+        import_line = f"from unifin.models import {model_name}"
 
-        # Check if already present
         if import_line in content:
             return
 
-        # Find the last model import line and insert after it
-        # Pattern: from unifin.models import xxx as _mN
         model_import_pattern = r"(from unifin\.models import \w+ as _m\d+.*\n)"
         matches = list(re.finditer(model_import_pattern, content))
 
         if matches:
             last_match = matches[-1]
-            # Determine the next alias number
             last_alias = re.search(r"_m(\d+)", last_match.group())
             next_num = int(last_alias.group(1)) + 1 if last_alias else len(matches) + 1
 
@@ -160,7 +137,6 @@ class HotLoader:
             insert_pos = last_match.end()
             content = content[:insert_pos] + new_import + content[insert_pos:]
         else:
-            # Fallback: append before provider imports
             provider_marker = "# ── Register providers ──"
             if provider_marker in content:
                 pos = content.index(provider_marker)
@@ -175,7 +151,6 @@ class HotLoader:
 
     @staticmethod
     def _update_provider_init(root: Path, provider: str, model_name: str) -> None:
-        """Add fetcher import to provider's __init__.py."""
         init_path = root / "src" / "unifin" / "providers" / provider / "__init__.py"
 
         if not init_path.exists():
@@ -187,7 +162,6 @@ class HotLoader:
         if import_line in content:
             return
 
-        # Append the import
         new_import = (
             f"\nfrom unifin.providers.{provider}"
             f" import {model_name}  # noqa: F401  # auto-evolved\n"

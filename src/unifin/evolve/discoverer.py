@@ -22,8 +22,6 @@ logger = logging.getLogger("unifin")
 # Known data source catalogs
 # ---------------------------------------------------------------------------
 
-# AKShare function catalog — organized by category.
-# Each entry: (function_name, description, sample_columns, default_exchanges)
 AKSHARE_CATALOG: list[dict[str, Any]] = [
     # ── Equity ──
     {
@@ -31,8 +29,17 @@ AKSHARE_CATALOG: list[dict[str, Any]] = [
         "function": "ak.stock_zh_a_hist",
         "description": "A股个股历史行情数据(东财)",
         "columns": [
-            "日期", "开盘", "收盘", "最高", "最低",
-            "成交量", "成交额", "振幅", "涨跌幅", "涨跌额", "换手率",
+            "日期",
+            "开盘",
+            "收盘",
+            "最高",
+            "最低",
+            "成交量",
+            "成交额",
+            "振幅",
+            "涨跌幅",
+            "涨跌额",
+            "换手率",
         ],
         "exchanges": ["XSHG", "XSHE"],
     },
@@ -49,8 +56,13 @@ AKSHARE_CATALOG: list[dict[str, Any]] = [
         "function": "ak.fund_open_fund_info_em",
         "description": "开放式基金历史净值数据(东财)",
         "columns": [
-            "净值日期", "单位净值", "累计净值",
-            "日增长率", "申购状态", "赎回状态", "分红送配",
+            "净值日期",
+            "单位净值",
+            "累计净值",
+            "日增长率",
+            "申购状态",
+            "赎回状态",
+            "分红送配",
         ],
         "exchanges": ["XSHG", "XSHE"],
     },
@@ -168,7 +180,6 @@ AKSHARE_CATALOG: list[dict[str, Any]] = [
     },
 ]
 
-# yfinance known data methods
 YFINANCE_CATALOG: list[dict[str, Any]] = [
     {
         "keywords": ["历史", "行情", "price", "historical", "ohlcv"],
@@ -224,15 +235,7 @@ class SourceDiscoverer:
     """Search known provider APIs for data sources matching a user's need."""
 
     def search(self, keywords: list[str], provider: str | None = None) -> list[SourceCandidate]:
-        """Search all (or a specific) provider for matching data sources.
-
-        Args:
-            keywords: Search terms (Chinese or English).
-            provider: Limit search to a specific provider.
-
-        Returns:
-            List of matching SourceCandidate, sorted by relevance.
-        """
+        """Search all (or a specific) provider for matching data sources."""
         candidates: list[SourceCandidate] = []
 
         if provider is None or provider == "akshare":
@@ -241,19 +244,12 @@ class SourceDiscoverer:
         if provider is None or provider == "yfinance":
             candidates.extend(self._search_catalog(keywords, "yfinance", YFINANCE_CATALOG))
 
-        # Sort by match score, filter out low-relevance matches
         candidates.sort(key=lambda c: self._score(c, keywords), reverse=True)
 
-        # Only keep candidates with score > 0 from keyword matching
-        # Then filter: at most 1 best candidate per provider
         if candidates:
             top_score = self._score(candidates[0], keywords)
-            # Discard anything scoring less than half the top score
             threshold = max(1, top_score // 2)
-            candidates = [
-                c for c in candidates
-                if self._score(c, keywords) >= threshold
-            ]
+            candidates = [c for c in candidates if self._score(c, keywords) >= threshold]
 
         return candidates
 
@@ -268,12 +264,14 @@ class SourceDiscoverer:
 
         for prov_name, catalog in catalogs:
             for entry in catalog:
-                result.append({
-                    "provider": prov_name,
-                    "function": entry["function"],
-                    "description": entry["description"],
-                    "keywords": ", ".join(entry["keywords"]),
-                })
+                result.append(
+                    {
+                        "provider": prov_name,
+                        "function": entry["function"],
+                        "description": entry["description"],
+                        "keywords": ", ".join(entry["keywords"]),
+                    }
+                )
         return result
 
     # ── internal ──
@@ -292,7 +290,6 @@ class SourceDiscoverer:
             entry_keywords = [k.lower() for k in entry.get("keywords", [])]
             desc_lower = entry.get("description", "").lower()
 
-            # Check if any search keyword matches entry keywords or description
             matched = False
             for kw in keywords_lower:
                 if any(kw in ek for ek in entry_keywords) or kw in desc_lower:

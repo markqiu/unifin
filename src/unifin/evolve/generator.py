@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any
 
 from unifin.evolve.schema import (
@@ -33,7 +34,7 @@ logger = logging.getLogger("unifin")
 
 
 # ---------------------------------------------------------------------------
-# LLM-assisted analysis
+# LLM prompts
 # ---------------------------------------------------------------------------
 
 _ANALYZE_SYSTEM_PROMPT = """\
@@ -114,10 +115,7 @@ class CodeGenerator:
     # ── Public API ──
 
     def analyze_need(self, user_request: str) -> DataNeed:
-        """Use LLM to analyze a user's data request into a DataNeed.
-
-        Falls back to a simple keyword-based analysis if LLM is unavailable.
-        """
+        """Use LLM to analyze a user's data request into a DataNeed."""
         if self._api_key:
             try:
                 return self._llm_analyze(user_request)
@@ -126,15 +124,8 @@ class CodeGenerator:
 
         return self._fallback_analyze(user_request)
 
-    def generate_column_mapping(
-        self,
-        source: SourceCandidate,
-        need: DataNeed,
-    ) -> dict[str, str]:
-        """Use LLM to generate column mapping from source to unified model.
-
-        Falls back to fuzzy name matching if LLM is unavailable.
-        """
+    def generate_column_mapping(self, source: SourceCandidate, need: DataNeed) -> dict[str, str]:
+        """Use LLM to generate column mapping from source to unified model."""
         if self._api_key:
             try:
                 return self._llm_column_mapping(source, need)
@@ -143,13 +134,9 @@ class CodeGenerator:
 
         return self._fallback_column_mapping(source, need)
 
-    def generate_plan(
-        self,
-        need: DataNeed,
-        sources: list[SourceCandidate],
-    ) -> EvolvePlan:
+    def generate_plan(self, need: DataNeed, sources: list[SourceCandidate]) -> EvolvePlan:
         """Generate a complete EvolvePlan with all files to be created."""
-        # Deduplicate: only keep one source per provider (first = highest score)
+        # Deduplicate: only keep one source per provider
         seen_providers: set[str] = set()
         unique_sources: list[SourceCandidate] = []
         for source in sources:
@@ -167,55 +154,45 @@ class CodeGenerator:
 
         # 1. Model file
         model_code = generate_model_code(need)
-        files.append(GeneratedFile(
-            path=f"src/unifin/models/{need.model_name}.py",
-            content=model_code,
-            description=f"数据模型: {need.model_name}",
-        ))
+        files.append(
+            GeneratedFile(
+                path=f"src/unifin/models/{need.model_name}.py",
+                content=model_code,
+                description=f"数据模型: {need.model_name}",
+            )
+        )
 
         # 2. Fetcher files (one per source)
         for source in sources:
             fetcher_code = generate_fetcher_code(need, source)
-            files.append(GeneratedFile(
-                path=f"src/unifin/providers/{source.provider}/{need.model_name}.py",
-                content=fetcher_code,
-                description=f"数据源: {source.provider}/{need.model_name}",
-            ))
+            files.append(
+                GeneratedFile(
+                    path=f"src/unifin/providers/{source.provider}/{need.model_name}.py",
+                    content=fetcher_code,
+                    description=f"数据源: {source.provider}/{need.model_name}",
+                )
+            )
 
         # 3. Test file
         test_code = generate_test_code(need, sources)
-        files.append(GeneratedFile(
-            path=f"tests/test_evolve_{need.model_name}.py",
-            content=test_code,
-            description=f"测试: {need.model_name}",
-        ))
-
-        return EvolvePlan(
-            need=need,
-            sources=sources,
-            files=files,
-            status="draft",
+        files.append(
+            GeneratedFile(
+                path=f"tests/test_evolve_{need.model_name}.py",
+                content=test_code,
+                description=f"测试: {need.model_name}",
+            )
         )
+
+        return EvolvePlan(need=need, sources=sources, files=files)
 
     # ── LLM helpers ──
 
     def _llm_analyze(self, user_request: str) -> DataNeed:
-        """Use LLM to analyze the data need."""
-        result = self._chat(
-            system=_ANALYZE_SYSTEM_PROMPT,
-            user=user_request,
-        )
-
-        # Parse JSON from the response
+        result = self._chat(system=_ANALYZE_SYSTEM_PROMPT, user=user_request)
         data = self._extract_json(result)
         return self._json_to_data_need(data)
 
-    def _llm_column_mapping(
-        self,
-        source: SourceCandidate,
-        need: DataNeed,
-    ) -> dict[str, str]:
-        """Use LLM to generate column mapping."""
+    def _llm_column_mapping(self, source: SourceCandidate, need: DataNeed) -> dict[str, str]:
         target_fields = [f.name for f in need.result_fields]
         prompt = _COLUMN_MAPPING_PROMPT.format(
             function_name=source.function_name,
@@ -223,12 +200,10 @@ class CodeGenerator:
             source_columns=source.sample_columns,
             target_fields=target_fields,
         )
-
         result = self._chat(system="You are a data mapping assistant.", user=prompt)
         return self._extract_json(result)
 
     def _chat(self, system: str, user: str) -> str:
-        """Call LLM chat completion and return the content."""
         import httpx
 
         headers = {"Content-Type": "application/json"}
@@ -251,23 +226,18 @@ class CodeGenerator:
 
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
-        """Extract JSON from LLM response text (which may contain markdown fences)."""
-        # Remove markdown code fences
         text = text.strip()
         if text.startswith("```"):
-            lines = text.split("\n")
-            # Remove first and last lines if they are fences
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines)
-
+            text_lines = text.split("\n")
+            if text_lines[0].startswith("```"):
+                text_lines = text_lines[1:]
+            if text_lines and text_lines[-1].strip() == "```":
+                text_lines = text_lines[:-1]
+            text = "\n".join(text_lines)
         return json.loads(text)
 
     @staticmethod
     def _json_to_data_need(data: dict[str, Any]) -> DataNeed:
-        """Convert parsed JSON dict to DataNeed."""
         query_fields = [
             FieldSpec(
                 name=f["name"],
@@ -277,7 +247,6 @@ class CodeGenerator:
             )
             for f in data.get("query_fields", [])
         ]
-
         result_fields = [
             FieldSpec(
                 name=f["name"],
@@ -287,7 +256,6 @@ class CodeGenerator:
             )
             for f in data.get("result_fields", [])
         ]
-
         return DataNeed(
             model_name=data["model_name"],
             category=data.get("category", "misc"),
@@ -304,14 +272,11 @@ class CodeGenerator:
     @staticmethod
     def _fallback_analyze(user_request: str) -> DataNeed:
         """Simple keyword-based analysis when no LLM is available."""
-        # Very basic — just create a generic model
         request_lower = user_request.lower()
 
-        # Guess model name from keywords
         model_name = "custom_data"
         category = "misc"
 
-        # Ordered from most specific (multi-keyword) to least specific
         keyword_map = [
             (["基金", "净值"], "fund_nav", "fund.price"),
             (["fund", "nav"], "fund_nav", "fund.price"),
@@ -343,16 +308,20 @@ class CodeGenerator:
                 category = cat
                 break
 
-        # Default fields
         query_fields = [
-            FieldSpec(name="symbol", type=FieldType.STR, required=True, description="标的代码"),
+            FieldSpec(
+                name="symbol", type=FieldType.STR,
+                required=True, description="标的代码",
+            ),
             FieldSpec(
                 name="start_date", type=FieldType.DATE,
                 required=False, description="开始日期",
             ),
-            FieldSpec(name="end_date", type=FieldType.DATE, required=False, description="结束日期"),
+            FieldSpec(
+                name="end_date", type=FieldType.DATE,
+                required=False, description="结束日期",
+            ),
         ]
-
         result_fields = [
             FieldSpec(name="date", type=FieldType.DATE, required=True, description="日期"),
             FieldSpec(name="value", type=FieldType.FLOAT, required=False, description="数值"),
@@ -368,15 +337,11 @@ class CodeGenerator:
         )
 
     @staticmethod
-    def _fallback_column_mapping(
-        source: SourceCandidate,
-        need: DataNeed,
-    ) -> dict[str, str]:
+    def _fallback_column_mapping(source: SourceCandidate, need: DataNeed) -> dict[str, str]:
         """Fuzzy name matching for column mapping."""
         mapping: dict[str, str] = {}
         target_names = {f.name for f in need.result_fields}
 
-        # Direct match (Chinese or English)
         common_mappings = {
             "日期": "date",
             "净值日期": "date",
@@ -410,3 +375,28 @@ class CodeGenerator:
                     mapping[src_col] = target
 
         return mapping
+
+    @staticmethod
+    def _extract_keywords(user_request: str, need: DataNeed) -> list[str]:
+        """Extract search keywords from the user request and analyzed need."""
+        keywords: list[str] = []
+
+        keywords.extend(need.model_name.split("_"))
+        keywords.extend(need.description.split()[:5])
+
+        cn_words = re.findall(r"[\u4e00-\u9fff]+", user_request)
+        keywords.extend(cn_words)
+
+        en_words = re.findall(r"[a-zA-Z]{2,}", user_request)
+        keywords.extend(en_words)
+
+        generic = {"数据", "需要", "获取", "查询", "想", "我", "data", "get", "want"}
+        seen: set[str] = set()
+        unique: list[str] = []
+        for kw in keywords:
+            kw_lower = kw.lower()
+            if kw_lower not in seen and kw_lower not in generic and len(kw) > 1:
+                seen.add(kw_lower)
+                unique.append(kw)
+
+        return unique

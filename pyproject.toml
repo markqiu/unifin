@@ -43,6 +43,7 @@ dev = [
 
 [project.scripts]
 unifin-server = "unifin.api.cli:main"
+unifin-evolve = "unifin.evolve.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/unifin"]

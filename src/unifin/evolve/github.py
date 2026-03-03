@@ -232,6 +232,72 @@ class GitHubClient:
                 result.returncode, result.args, result.stdout, result.stderr
             )
 
+    # ── Pull Request read ──
+
+    def get_pull_request(self, pr_number: int) -> dict[str, Any]:
+        """Fetch a pull request by number."""
+        url = f"{self._base}/repos/{self._repo}/pulls/{pr_number}"
+        resp = httpx.get(url, headers=self._headers, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_pr_files(self, pr_number: int) -> list[dict[str, Any]]:
+        """Fetch the list of files changed in a pull request."""
+        url = f"{self._base}/repos/{self._repo}/pulls/{pr_number}/files"
+        resp = httpx.get(url, headers=self._headers, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_pr_diff(self, pr_number: int) -> str:
+        """Fetch the unified diff of a pull request."""
+        url = f"{self._base}/repos/{self._repo}/pulls/{pr_number}"
+        headers = {**self._headers, "Accept": "application/vnd.github.v3.diff"}
+        resp = httpx.get(url, headers=headers, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        return resp.text
+
+    def post_pr_comment(self, pr_number: int, body: str) -> dict[str, Any]:
+        """Post a comment on a pull request (issue comment endpoint)."""
+        # PRs use the issue comments endpoint for general comments
+        url = f"{self._base}/repos/{self._repo}/issues/{pr_number}/comments"
+        resp = httpx.post(
+            url,
+            headers=self._headers,
+            json={"body": body},
+            timeout=_TIMEOUT,
+        )
+        resp.raise_for_status()
+        logger.info("Posted comment on PR #%d", pr_number)
+        return resp.json()
+
+    def post_pr_review(
+        self,
+        pr_number: int,
+        body: str,
+        event: str = "COMMENT",
+    ) -> dict[str, Any]:
+        """Create a pull request review.
+
+        Parameters
+        ----------
+        pr_number : int
+            The PR number.
+        body : str
+            Review body text (Markdown).
+        event : str
+            One of "APPROVE", "REQUEST_CHANGES", "COMMENT".
+        """
+        url = f"{self._base}/repos/{self._repo}/pulls/{pr_number}/reviews"
+        resp = httpx.post(
+            url,
+            headers=self._headers,
+            json={"body": body, "event": event},
+            timeout=_TIMEOUT,
+        )
+        resp.raise_for_status()
+        logger.info("Posted PR review on #%d (event=%s)", pr_number, event)
+        return resp.json()
+
     # ── Helpers ──
 
     def has_label(self, issue: dict[str, Any], label_name: str) -> bool:

@@ -487,3 +487,161 @@ class TestLoader:
         from unifin.evolve.loader import loader
 
         assert loader is not None
+
+
+# ──────────────────────────────────────────────
+# 9. PR review tests
+# ──────────────────────────────────────────────
+
+
+class TestGitHubClientPR:
+    """Tests for PR-related methods in GitHubClient."""
+
+    def test_get_pull_request_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        gh = GitHubClient(token="fake", repo="owner/repo")
+        assert hasattr(gh, "get_pull_request")
+
+    def test_get_pr_files_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        gh = GitHubClient(token="fake", repo="owner/repo")
+        assert hasattr(gh, "get_pr_files")
+
+    def test_get_pr_diff_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        gh = GitHubClient(token="fake", repo="owner/repo")
+        assert hasattr(gh, "get_pr_diff")
+
+    def test_post_pr_comment_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        gh = GitHubClient(token="fake", repo="owner/repo")
+        assert hasattr(gh, "post_pr_comment")
+
+    def test_post_pr_review_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        gh = GitHubClient(token="fake", repo="owner/repo")
+        assert hasattr(gh, "post_pr_review")
+
+
+class TestCodeReview:
+    """Tests for LLM code review functionality."""
+
+    def test_review_code_raises_without_llm(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        if not gen.has_llm:
+            with pytest.raises(RuntimeError, match="LLM API key is required"):
+                gen.review_code("diff content here")
+
+    def test_review_code_method_exists(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        assert hasattr(gen, "review_code")
+        assert callable(gen.review_code)
+
+
+class TestReviewComment:
+    """Tests for the review comment builder."""
+
+    def test_build_review_comment_all_pass(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comment = Orchestrator._build_review_comment(
+            test_result={"success": True, "summary": "246 passed in 8.12s"},
+            lint_result={"success": True, "issue_count": 0},
+            file_summaries=["src/unifin/models/fund_nav.py (+50 -0)"],
+            llm_review={"review_body": "Code looks good.", "verdict": "APPROVE"},
+        )
+        assert "✅" in comment
+        assert "246 passed" in comment
+        assert "fund_nav.py" in comment
+        assert "Code looks good" in comment
+        assert "建议合并" in comment
+
+    def test_build_review_comment_test_fail(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comment = Orchestrator._build_review_comment(
+            test_result={"success": False, "summary": "2 failed, 244 passed"},
+            lint_result={"success": True, "issue_count": 0},
+            file_summaries=["src/unifin/models/bad.py (+10 -0)"],
+            llm_review=None,
+        )
+        assert "❌" in comment
+        assert "测试失败" in comment
+
+    def test_build_review_comment_lint_fail(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comment = Orchestrator._build_review_comment(
+            test_result={"success": True, "summary": "246 passed"},
+            lint_result={"success": False, "issue_count": 3, "output": "E501 line too long"},
+            file_summaries=[],
+            llm_review=None,
+        )
+        assert "⚠️" in comment
+        assert "3" in comment
+
+    def test_build_review_comment_no_llm(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comment = Orchestrator._build_review_comment(
+            test_result={"success": True, "summary": "246 passed"},
+            lint_result={"success": True, "issue_count": 0},
+            file_summaries=["file.py (+1 -0)"],
+            llm_review=None,
+        )
+        assert "AI 代码审查" not in comment
+        assert "所有自动检查通过" in comment
+
+    def test_build_review_comment_request_changes(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comment = Orchestrator._build_review_comment(
+            test_result={"success": True, "summary": "246 passed"},
+            lint_result={"success": True, "issue_count": 0},
+            file_summaries=["file.py (+1 -0)"],
+            llm_review={
+                "review_body": "Found issues.",
+                "verdict": "REQUEST_CHANGES",
+            },
+        )
+        assert "AI 审查发现需要修改" in comment
+
+
+class TestOrchestratorReviewPR:
+    """Tests for the review_pr orchestrator method."""
+
+    def test_review_pr_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert hasattr(orch, "review_pr")
+        assert callable(orch.review_pr)
+
+
+class TestCLIReviewPR:
+    """Tests for the review-pr CLI command."""
+
+    def test_parse_review_pr(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["review-pr", "--pr-number", "9"])
+        assert args.command == "review-pr"
+        assert args.pr_number == 9
+
+    def test_review_pr_command_registered(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        # Should not raise
+        args = parser.parse_args(["review-pr", "--pr-number", "1"])
+        assert hasattr(args, "func")

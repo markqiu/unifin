@@ -285,6 +285,89 @@ class Orchestrator:
 
         return result
 
+    def review_pr(
+        self,
+        pr_number: int,
+        gh: GitHubClient | None = None,
+    ) -> dict[str, Any]:
+        """Run tests and LLM code review on a pull request.
+
+        1. Checkout the PR branch and run full test suite
+        2. Run ruff lint
+        3. Use LLM to review the diff
+        4. Post all results as a PR comment/review
+        """
+        gh = gh or GitHubClient()
+        pr = gh.get_pull_request(pr_number)
+        head_branch = pr["head"]["ref"]
+        logger.info("Reviewing PR #%d (%s)", pr_number, head_branch)
+
+        result: dict[str, Any] = {"pr_number": pr_number, "branch": head_branch}
+
+        # 1. Run test suite
+        test_result = self._run_full_tests()
+        result["tests"] = test_result
+
+        # 2. Run ruff lint
+        lint_result = self._run_lint()
+        result["lint"] = lint_result
+
+        # 3. Get diff and changed files for LLM review
+        changed_files = gh.get_pr_files(pr_number)
+        file_summaries = [
+            f"{f['filename']} (+{f.get('additions', 0)} -{f.get('deletions', 0)})"
+            for f in changed_files
+        ]
+        result["changed_files"] = [f["filename"] for f in changed_files]
+
+        # 4. LLM code review
+        llm_review: dict[str, str] | None = None
+        if self._generator.has_llm:
+            try:
+                diff = gh.get_pr_diff(pr_number)
+                llm_review = self._generator.review_code(diff, file_summaries)
+                result["llm_review"] = llm_review
+            except Exception as e:
+                logger.warning("LLM review failed: %s", e)
+                result["llm_review_error"] = str(e)
+        else:
+            result["llm_review_skipped"] = "LLM not configured"
+
+        # 5. Build and post review comment
+        comment_body = self._build_review_comment(
+            test_result=test_result,
+            lint_result=lint_result,
+            file_summaries=file_summaries,
+            llm_review=llm_review,
+        )
+
+        # Determine review event based on results
+        all_pass = test_result["success"] and lint_result["success"]
+        if not all_pass:
+            event = "REQUEST_CHANGES"
+        elif llm_review and llm_review.get("verdict") == "REQUEST_CHANGES":
+            event = "REQUEST_CHANGES"
+        elif llm_review and llm_review.get("verdict") == "APPROVE" and all_pass:
+            event = "APPROVE"
+        else:
+            event = "COMMENT"
+
+        try:
+            gh.post_pr_review(pr_number, comment_body, event=event)
+            result["review_event"] = event
+            result["review_posted"] = True
+        except Exception as e:
+            logger.warning("Failed to post PR review, trying comment: %s", e)
+            try:
+                gh.post_pr_comment(pr_number, comment_body)
+                result["review_posted"] = True
+                result["review_fallback"] = "comment"
+            except Exception as e2:
+                logger.error("Failed to post PR comment: %s", e2)
+                result["review_posted"] = False
+
+        return result
+
     # ===================================================================
     # Comment building
     # ===================================================================
@@ -365,6 +448,142 @@ class Orchestrator:
                 }
             except Exception as e:
                 return {"success": False, "output": str(e)}
+
+    @staticmethod
+    def _run_full_tests() -> dict[str, Any]:
+        """Run the full project test suite."""
+        for cmd in [
+            ["uv", "run", "pytest", "--tb=short", "-q"],
+            ["pytest", "--tb=short", "-q"],
+        ]:
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                output = result.stdout + result.stderr
+                # Extract summary line (e.g. "246 passed in 8.12s")
+                summary = ""
+                for line in output.strip().splitlines():
+                    if "passed" in line or "failed" in line or "error" in line:
+                        summary = line.strip()
+                return {
+                    "success": result.returncode == 0,
+                    "output": output,
+                    "summary": summary,
+                }
+            except subprocess.TimeoutExpired:
+                return {
+                    "success": False,
+                    "output": "Tests timed out after 300s.",
+                    "summary": "TIMEOUT",
+                }
+            except FileNotFoundError:
+                continue
+        return {"success": False, "output": "pytest not found.", "summary": "NOT FOUND"}
+
+    @staticmethod
+    def _run_lint() -> dict[str, Any]:
+        """Run ruff lint check on the source code."""
+        for cmd in [
+            ["uv", "run", "ruff", "check", "src/", "tests/", "--output-format=concise"],
+            ["ruff", "check", "src/", "tests/", "--output-format=concise"],
+        ]:
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                output = result.stdout + result.stderr
+                # Count issues
+                issue_lines = [
+                    line for line in output.strip().splitlines()
+                    if line.strip() and not line.startswith("All checks")
+                ]
+                return {
+                    "success": result.returncode == 0,
+                    "output": output,
+                    "issue_count": len(issue_lines) if result.returncode != 0 else 0,
+                }
+            except subprocess.TimeoutExpired:
+                return {"success": False, "output": "Lint timed out.", "issue_count": -1}
+            except FileNotFoundError:
+                continue
+        return {"success": False, "output": "ruff not found.", "issue_count": -1}
+
+    @staticmethod
+    def _build_review_comment(
+        *,
+        test_result: dict[str, Any],
+        lint_result: dict[str, Any],
+        file_summaries: list[str],
+        llm_review: dict[str, str] | None,
+    ) -> str:
+        """Build the PR review comment body."""
+        parts: list[str] = ["## 🤖 自动化 PR 审查报告\n"]
+
+        # Changed files
+        parts.append("### 📁 变更文件")
+        for f in file_summaries:
+            parts.append(f"- `{f}`")
+        parts.append("")
+
+        # Test results
+        test_icon = "✅" if test_result["success"] else "❌"
+        parts.append(f"### {test_icon} 测试结果")
+        if test_result.get("summary"):
+            parts.append(f"```\n{test_result['summary']}\n```")
+        else:
+            # Truncate output for display
+            output = test_result.get("output", "")
+            if len(output) > 2000:
+                output = output[-2000:]
+                output = "...(truncated)\n" + output
+            parts.append(f"```\n{output}\n```")
+        parts.append("")
+
+        # Lint results
+        lint_icon = "✅" if lint_result["success"] else "⚠️"
+        parts.append(f"### {lint_icon} Lint 检查 (ruff)")
+        if lint_result["success"]:
+            parts.append("所有检查通过，无 lint 问题。")
+        else:
+            output = lint_result.get("output", "")
+            if len(output) > 2000:
+                output = output[:2000] + "\n...(truncated)"
+            parts.append(f"发现 {lint_result.get('issue_count', '?')} 个问题：")
+            parts.append(f"```\n{output}\n```")
+        parts.append("")
+
+        # LLM review
+        if llm_review:
+            parts.append("### 🧠 AI 代码审查")
+            parts.append(llm_review.get("review_body", "无审查内容"))
+            parts.append("")
+
+        # Overall verdict
+        parts.append("---")
+        all_pass = test_result["success"] and lint_result["success"]
+        if all_pass:
+            if llm_review and llm_review.get("verdict") == "APPROVE":
+                parts.append("✅ **总体结论**: 所有检查通过，AI 审查通过，建议合并。")
+            elif llm_review and llm_review.get("verdict") == "REQUEST_CHANGES":
+                parts.append("⚠️ **总体结论**: 测试和 lint 通过，但 AI 审查发现需要修改的问题。")
+            else:
+                parts.append("✅ **总体结论**: 所有自动检查通过。")
+        else:
+            issues: list[str] = []
+            if not test_result["success"]:
+                issues.append("测试失败")
+            if not lint_result["success"]:
+                issues.append("lint 检查未通过")
+            parts.append(f"❌ **总体结论**: {', '.join(issues)}，请修复后重新提交。")
+
+        return "\n".join(parts)
 
     # ===================================================================
     # Internal helpers

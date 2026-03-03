@@ -74,6 +74,32 @@ Output ONLY valid JSON with this structure:
 }
 """
 
+_CODE_REVIEW_PROMPT = """\
+You are a senior Python engineer reviewing code for the unifin financial data platform.
+
+Project conventions:
+- All data models use Pydantic BaseModel with Query + Data classes
+- Date fields use `import datetime as dt` then `dt.date` (NEVER `from datetime import date`)
+- All Data fields except primary key are `Optional[T] = None`
+- Fetchers inherit `unifin.core.fetcher.Fetcher` and implement TET
+  (transform_query, extract_data, transform_data)
+- Fetchers return `list[dict]`, never polars DataFrames
+- Symbols use ISO 10383 MIC format (e.g. `000001.XSHE`)
+- Errors use structured `UnifinError` hierarchy, never bare `Exception`/`ValueError`
+- Tests use pytest (not unittest.TestCase)
+
+Review the following diff and provide:
+1. **Summary**: What does this PR do? (1-2 sentences)
+2. **Issues** (if any): Bugs, convention violations, security concerns
+3. **Suggestions** (if any): Improvements, missing tests, edge cases
+4. **Verdict**: One of APPROVE / REQUEST_CHANGES / COMMENT
+
+Format your response as Markdown. Be concise but thorough.
+If the code follows all conventions and has no issues, give APPROVE.
+If there are minor style nits only, give COMMENT with suggestions.
+If there are bugs or convention violations, give REQUEST_CHANGES.
+"""
+
 _COLUMN_MAPPING_PROMPT = """\
 You are mapping columns from a data source API to a unified data model.
 
@@ -140,6 +166,19 @@ class CodeGenerator:
                 "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
             )
         return self._llm_column_mapping(source, need)
+
+    def review_code(self, diff: str, file_summaries: list[str] | None = None) -> dict[str, str]:
+        """Use LLM to review a code diff.
+
+        Returns a dict with keys: summary, issues, suggestions, verdict, review_body.
+        Raises RuntimeError if no LLM API key is configured.
+        """
+        if not self._llm.has_api_key:
+            raise RuntimeError(
+                "LLM API key is required for review_code(). "
+                "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
+            )
+        return self._llm_review(diff, file_summaries)
 
     def generate_plan(self, need: DataNeed, sources: list[SourceCandidate]) -> EvolvePlan:
         """Generate a complete EvolvePlan with all files to be created."""
@@ -277,3 +316,35 @@ class CodeGenerator:
                 unique.append(kw)
 
         return unique
+
+    def _llm_review(
+        self,
+        diff: str,
+        file_summaries: list[str] | None = None,
+    ) -> dict[str, str]:
+        """Use LLM to review a code diff."""
+        user_msg_parts = []
+        if file_summaries:
+            files_md = "\n".join(f"- {f}" for f in file_summaries)
+            user_msg_parts.append(f"### Changed files\n{files_md}")
+        # Truncate diff to ~12k chars to stay within context limits
+        truncated = diff[:12000]
+        if len(diff) > 12000:
+            truncated += "\n\n... (diff truncated)"
+        user_msg_parts.append(f"### Diff\n```diff\n{truncated}\n```")
+
+        user_msg = "\n\n".join(user_msg_parts)
+        result = self._llm.chat(system=_CODE_REVIEW_PROMPT, user=user_msg)
+
+        # Parse verdict from response
+        verdict = "COMMENT"
+        result_upper = result.upper()
+        if "APPROVE" in result_upper and "REQUEST_CHANGES" not in result_upper:
+            verdict = "APPROVE"
+        elif "REQUEST_CHANGES" in result_upper:
+            verdict = "REQUEST_CHANGES"
+
+        return {
+            "review_body": result,
+            "verdict": verdict,
+        }

@@ -1,4 +1,8 @@
-"""DuckDB local persistence layer — cache and incremental sync."""
+"""DuckDB local persistence layer — cache and incremental sync.
+
+All data fetched via the Router is automatically persisted here.
+Tables are named ``unifin_{model_name}`` and created lazily.
+"""
 
 from __future__ import annotations
 
@@ -35,13 +39,21 @@ class DataStore:
             logger.debug("Connected to DuckDB at %s", self._db_path)
         return self._con
 
+    # ── write ──
+
     def save(
         self,
         model_name: str,
         data: list[dict[str, Any]],
+        *,
         symbol: str | None = None,
+        dedup_keys: list[str] | None = None,
     ) -> int:
-        """Save data to local store. Returns number of rows inserted."""
+        """Save data to local store. Returns number of rows inserted.
+
+        If *dedup_keys* is given (e.g. ``["date", "symbol"]``), existing rows
+        with the same key values are replaced (upsert semantics).
+        """
         if not data:
             return 0
 
@@ -50,41 +62,73 @@ class DataStore:
         table_name = f"unifin_{model_name}"
         df = pl.DataFrame(data)
 
-        # Create or append
+        # Create table lazily
         self.connection.execute(
             f"CREATE TABLE IF NOT EXISTS {table_name} AS SELECT * FROM df WHERE 1=0"
         )
+
+        if dedup_keys:
+            # Delete old rows with matching keys, then insert new
+            key_cols = [k for k in dedup_keys if k in df.columns]
+            if key_cols:
+                conditions = " AND ".join(f"{table_name}.{k} = new_data.{k}" for k in key_cols)
+                self.connection.execute(
+                    f"DELETE FROM {table_name} WHERE EXISTS "
+                    f"(SELECT 1 FROM df AS new_data WHERE {conditions})"
+                )
+
         self.connection.execute(f"INSERT INTO {table_name} SELECT * FROM df")
         logger.debug("Saved %d rows to %s", len(data), table_name)
         return len(data)
 
+    # ── read ──
+
     def load(
         self,
         model_name: str,
+        *,
         symbol: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        filters: dict[str, Any] | None = None,
+        order_by: str | None = None,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Load data from local store."""
+        """Load data from local store.
 
+        Args:
+            model_name: Registry model name (table = ``unifin_{model_name}``).
+            symbol: Filter by ``symbol`` column.
+            start_date: Filter ``date >= ?``.
+            end_date: Filter ``date <= ?``.
+            filters: Extra ``column = value`` filters.
+            order_by: Column name(s) to sort by.
+            limit: Max rows.
+        """
         table_name = f"unifin_{model_name}"
 
         try:
-            conditions = []
+            conditions: list[str] = []
             if symbol:
                 conditions.append(f"symbol = '{symbol}'")
             if start_date:
                 conditions.append(f"date >= '{start_date}'")
             if end_date:
                 conditions.append(f"date <= '{end_date}'")
+            if filters:
+                for col, val in filters.items():
+                    conditions.append(f"{col} = '{val}'")
 
             where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-            result = self.connection.execute(
-                f"SELECT * FROM {table_name}{where} ORDER BY date"
-            ).pl()
+            order = f" ORDER BY {order_by}" if order_by else ""
+            lim = f" LIMIT {limit}" if limit else ""
+            sql = f"SELECT * FROM {table_name}{where}{order}{lim}"
+            result = self.connection.execute(sql).pl()
             return result.to_dicts()
         except Exception:
             return []
+
+    # ── introspection ──
 
     def has_data(
         self,
@@ -101,6 +145,24 @@ class DataStore:
             return count > 0
         except Exception:
             return False
+
+    def list_tables(self) -> list[str]:
+        """List all unifin tables in the store."""
+        try:
+            rows = self.connection.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'unifin_%'"
+            ).fetchall()
+            return [r[0] for r in rows]
+        except Exception:
+            return []
+
+    def table_row_count(self, model_name: str) -> int:
+        """Return the number of rows in a model's table."""
+        table_name = f"unifin_{model_name}"
+        try:
+            return self.connection.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+        except Exception:
+            return 0
 
     def close(self) -> None:
         """Close the database connection."""

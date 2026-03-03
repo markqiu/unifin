@@ -86,37 +86,8 @@ def historical(
         adjust=adjust,
     )
 
-    # Check local cache first
-    if use_cache:
-        from unifin.core.store import store
-        from unifin.core.symbol import to_unified_symbol
-
-        unified_sym = to_unified_symbol(symbol)
-        cached = store.load(
-            "equity_historical",
-            symbol=unified_sym,
-            start_date=str(start_date) if start_date else None,
-            end_date=str(end_date) if end_date else None,
-        )
-        if cached:
-            return pl.DataFrame(cached)
-
-    # Route to provider
-    results = router.query("equity_historical", query, provider=provider)
-
-    if not results:
-        return pl.DataFrame()
-
-    # Save to cache
-    if use_cache:
-        from unifin.core.store import store
-
-        try:
-            store.save("equity_historical", results, symbol=symbol)
-        except Exception:
-            pass  # Cache failures are non-fatal
-
-    return pl.DataFrame(results)
+    results = router.query("equity_historical", query, provider=provider, use_cache=use_cache)
+    return pl.DataFrame(results) if results else pl.DataFrame()
 
 
 def search(

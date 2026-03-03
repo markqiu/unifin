@@ -1,4 +1,7 @@
-"""Smart router — automatically selects the best provider for a query."""
+"""Smart router — automatically selects the best provider for a query.
+
+Every successful fetch is automatically persisted to the local DuckDB store.
+"""
 
 from __future__ import annotations
 
@@ -13,21 +16,23 @@ from unifin.core.types import Exchange
 
 logger = logging.getLogger("unifin")
 
-# Provider priority: higher = preferred.  Free providers get slight priority
-# for the same exchange coverage.
+# Provider priority: higher = preferred.
 _PROVIDER_PRIORITY: dict[str, int] = {
-    # China A-share — eastmoney is official & free
     "eastmoney": 90,
     "akshare": 70,
     "tushare": 60,
     "joinquant": 80,
-    # Global — yfinance is free, fmp has better coverage
     "yfinance": 75,
     "fmp": 85,
-    # Supplementary
     "eodhd": 65,
     "jquants": 70,
     "jugaad": 70,
+}
+
+# Models that have (date, symbol) natural dedup keys
+_TIME_SERIES_MODELS = {
+    "equity_historical",
+    "index_historical",
 }
 
 
@@ -35,11 +40,14 @@ class SmartRouter:
     """Routes data requests to the best available provider.
 
     Selection logic:
-    1. If `provider` is explicitly specified → use it directly.
+    1. If ``provider`` is explicitly specified → use it directly.
     2. Detect exchange from symbol.
     3. Find all providers that support the model + exchange.
     4. Sort by priority, pick the best one.
     5. Fall back to next provider on failure.
+
+    After a successful fetch the results are **automatically persisted** to
+    the local DuckDB store (non-fatal on failure).
     """
 
     def query(
@@ -47,6 +55,8 @@ class SmartRouter:
         model_name: str,
         query: BaseModel,
         provider: str | None = None,
+        *,
+        use_cache: bool = True,
     ) -> list[dict[str, Any]]:
         """Execute a query, routing to the best provider.
 
@@ -54,22 +64,28 @@ class SmartRouter:
             model_name: Registered model name (e.g., "equity_historical").
             query: Unified query model instance.
             provider: Optional explicit provider name.
+            use_cache: When True, check local DuckDB cache before fetching.
 
         Returns:
             List of result dicts conforming to the model's result schema.
         """
-        model_info = model_registry.get(model_name)
+        model_registry.get(model_name)  # validates model exists
 
         # Determine symbol and exchange
         symbol = getattr(query, "symbol", None)
         _, exchange = parse_symbol(symbol) if symbol else (None, None)
+
+        # ── Try cache first ──
+        if use_cache and symbol:
+            cached = self._load_cache(model_name, query)
+            if cached:
+                return cached
 
         # Resolve provider(s) to try
         providers_to_try = self._resolve_providers(model_name, exchange, provider)
         if not providers_to_try:
             from unifin.core.errors import NoProviderError
 
-            # Gather all available providers for this model for context
             all_for_model = list(provider_registry.get_providers_for_model(model_name).keys())
             raise NoProviderError(
                 model_name=model_name,
@@ -82,7 +98,10 @@ class SmartRouter:
         last_error: Exception | None = None
         for prov_name in providers_to_try:
             try:
-                return self._execute(model_name, query, prov_name)
+                results = self._execute(model_name, query, prov_name)
+                # Persist results (non-fatal)
+                self._save_cache(model_name, results)
+                return results
             except Exception as e:
                 logger.warning(
                     "Provider '%s' failed for %s: %s. Trying next...",
@@ -99,6 +118,54 @@ class SmartRouter:
             tried=providers_to_try,
             last_error=last_error,
         )
+
+    # ── cache helpers ──
+
+    def _load_cache(
+        self,
+        model_name: str,
+        query: BaseModel,
+    ) -> list[dict[str, Any]] | None:
+        """Attempt to load results from local store."""
+        try:
+            from unifin.core.store import store
+            from unifin.core.symbol import to_unified_symbol as _uni
+
+            symbol = getattr(query, "symbol", None)
+            unified = _uni(symbol) if symbol else None
+            start = getattr(query, "start_date", None)
+            end = getattr(query, "end_date", None)
+
+            rows = store.load(
+                model_name,
+                symbol=unified,
+                start_date=str(start) if start else None,
+                end_date=str(end) if end else None,
+            )
+            if rows:
+                logger.debug("Cache hit: %d rows for %s/%s", len(rows), model_name, unified)
+                return rows
+        except Exception:
+            pass
+        return None
+
+    def _save_cache(
+        self,
+        model_name: str,
+        data: list[dict[str, Any]],
+    ) -> None:
+        """Persist results to local store (non-fatal)."""
+        if not data:
+            return
+        try:
+            from unifin.core.store import store
+
+            dedup = ["date", "symbol"] if model_name in _TIME_SERIES_MODELS else None
+            store.save(model_name, data, dedup_keys=dedup)
+        except Exception as exc:
+            logger.debug("Cache save failed for %s: %s", model_name, exc)
+
+    # ── provider resolution ──
 
     def _resolve_providers(
         self,

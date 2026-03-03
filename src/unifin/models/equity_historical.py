@@ -74,6 +74,9 @@ model_registry.register(
         category="equity.price",
         query_type=EquityHistoricalQuery,
         result_type=EquityHistoricalData,
-        description="Historical OHLCV price data for equities, supporting daily to minute-level intervals.",
+        description=(
+            "Historical OHLCV price data for equities,"
+            " supporting daily to minute-level intervals."
+        ),
     )
 )

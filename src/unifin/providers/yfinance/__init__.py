@@ -5,7 +5,10 @@ from unifin.core.registry import ProviderInfo, provider_registry
 provider_registry.register_provider(
     ProviderInfo(
         name="yfinance",
-        description="Yahoo Finance — free global market data (15-min delayed US quotes, historical from ~1970)",
+        description=(
+            "Yahoo Finance — free global market data"
+            " (15-min delayed US quotes, historical from ~1970)"
+        ),
         website="https://finance.yahoo.com/",
         credentials_env={},  # No auth required
         markets=[

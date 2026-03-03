@@ -1,22 +1,26 @@
 # AGENTS.md — unifin
 
-unifin 是一个统一的全球金融数据平台，通过单一 SDK 入口聚合多个数据源（yfinance、eastmoney、tushare、joinquant、fmp 等），对外提供标准化的 Python API。所有 SDK 函数返回 `polars.DataFrame`。
+unifin 是一个统一的全球金融数据平台，通过单一 SDK 入口聚合多个数据源（yfinance、eastmoney、akshare、tushare、joinquant、fmp 等），对外提供标准化的 Python API 和 REST API。所有 SDK 函数返回 `polars.DataFrame`。
 
 ## 环境设置
 
-- Python **3.11+**（当前开发环境为 3.14.2）
-- 包管理：使用 uv 或 pip
+- Python **3.11+**（当前开发环境为 3.13.7）
+- 包管理：使用 **uv**（推荐）或 pip
 - 虚拟环境路径：`.venv/`
 - 安装命令（开发模式）：
 
 ```bash
+# 推荐方式（uv）
+uv sync --extra dev --extra all
+
+# 或使用 pip
 pip install -e ".[dev,all]"
 ```
 
 ## 构建、测试、Lint 命令
 
 ```bash
-# 运行全部测试（115 个，约 5 秒）
+# 运行全部测试（188 个，约 8 秒）
 pytest
 
 # 运行单个测试文件
@@ -36,7 +40,7 @@ ruff check --fix src/ tests/
 ruff format src/ tests/
 ```
 
-- 每次修改代码后 **必须** 运行 `pytest` 确保全部 115 个测试通过。
+- 每次修改代码后 **必须** 运行 `pytest` 确保全部 188 个测试通过。
 - 每次修改代码后 **必须** 运行 `ruff check src/ tests/` 确保无 lint 错误。
 - 测试不依赖网络，可离线运行。需要真实 API 调用的测试标记了 E2E。
 
@@ -50,18 +54,29 @@ src/unifin/
 │   ├── symbol.py        # ISO 10383 MIC ↔ Provider symbol 双向转换 + 校验
 │   ├── fetcher.py       # Fetcher 抽象基类 (TET pipeline)
 │   ├── registry.py      # ModelRegistry + ProviderRegistry 全局单例
-│   ├── router.py        # SmartRouter: 自动选 Provider、优先级排序、故障转移
-│   ├── store.py         # DuckDB 本地缓存 (~/.unifin/data.duckdb)
+│   ├── router.py        # SmartRouter: 自动选 Provider、优先级排序、故障转移、自动缓存
+│   ├── store.py         # DuckDB 本地持久化 (~/.unifin/data.duckdb)，去重 + 过滤
 │   └── errors.py        # 结构化错误层级 (UnifinError 树)
 ├── models/              # 10 个数据模型 (每个文件含 Query + Data Pydantic 模型)
 ├── providers/
-│   ├── yfinance/        # 8 个 Fetcher (全球覆盖)
+│   ├── yfinance/        # 10 个 Fetcher (全球覆盖)
+│   ├── akshare/         # 5 个 Fetcher (A 股)
 │   └── eastmoney/       # 1 个 Fetcher (A 股)
 ├── sdk/                 # 4 个命名空间模块 (equity, index, etf, market)
+├── api/                 # REST API (FastAPI，从 Registry 自动生成端点)
+│   ├── app.py           # FastAPI 应用：自动为每个 Model 生成 POST 端点
+│   └── cli.py           # CLI 入口：unifin-server 命令
+├── nl/                  # 自然语言查询模块
+│   ├── tools.py         # 从 Registry 自动生成 OpenAI function-calling 工具定义
+│   └── engine.py        # LLM 驱动的自然语言 → unifin 查询翻译引擎
 tests/
 ├── test_equity_historical.py   # 25 tests: Symbol + Registry + Router + E2E
 ├── test_m2_models.py           # 57 tests: 全模型 + Fetcher + 类型 + 输出验证
-└── test_error_messages.py      # 33 tests: 错误结构 + 友好性 + 继承链
+├── test_error_messages.py      # 33 tests: 错误结构 + 友好性 + 继承链
+├── test_api_nl.py              # 18 tests: API端点 + NL工具生成 + Store增强
+├── test_new_fetchers.py        # 55 tests: akshare + yfinance 新 Fetcher
+scripts/
+└── verify_pipeline.py          # 全流程端到端验证脚本
 ```
 
 ## 架构规则
@@ -69,14 +84,17 @@ tests/
 ### 1. 分层依赖方向（严格单向）
 
 ```
-SDK → Router → Registry → Model → Core (types, symbol, fetcher, errors)
-                                     ↑
-Provider → Fetcher(ABC) ─────────────┘
+API (FastAPI)  →  NL (LLM tools) →  SDK
+     ↓                                ↓
+     └──────────→ Router → Registry → Model → Core (types, symbol, fetcher, errors)
+                    ↓                           ↑
+                  Store (DuckDB)   Provider → Fetcher(ABC) ───┘
 ```
 
 - **禁止** 上层模块 import 下层具体实现（如 core 不能 import sdk 或 providers）。
 - **禁止** Provider 之间相互 import。
 - Provider 只能依赖 `core/*` 和 `models/*`。
+- API 和 NL 模块通过 Router 访问数据，**不直接调用** Provider。
 
 ### 2. 初始化顺序（`__init__.py` 中的 import 顺序不可改）
 
@@ -161,7 +179,46 @@ UnifinError
 - Provider 优先级: eastmoney(90) > fmp(85) > joinquant(80) > yfinance(75) > akshare(70) > tushare(60)
 - 路由流程: 从 symbol 检测 exchange → 筛选支持该 exchange 的 Provider → 按优先级排序 → 依次尝试（首个成功即返回）
 - Router 负责: symbol 转换（unified → provider）、Pydantic 输出验证、symbol 注入（确保结果含统一 symbol）
+- **自动缓存**: Router 在 `query()` 中自动将结果持久化到 DuckDB（`use_cache=True` 时先查缓存再拉取）
+- 时序模型（`equity_historical`、`index_historical`）使用 `dedup_keys=["symbol", "date"]` 去重
 - 缓存失败 **不能** 影响主流程（non-fatal）。
+
+### 10. REST API 规范
+
+- REST API 基于 FastAPI，从 `ModelRegistry` **自动生成**端点，无需手动注册路由。
+- 每个已注册 Model 自动生成: `POST /api/{category_path}/{model_name}`
+  - 例: `equity_historical` → `POST /api/equity/price/equity_historical`
+  - 别名: `POST /api/query/{model_name}` (不出现在 OpenAPI 文档中)
+- Request Body 即 Model 的 Query 类型，`provider` 通过 query parameter 传递。
+- 响应格式: `list[DataModel]` (JSON array of objects)
+- 元数据端点: `GET /api/health`, `GET /api/models`, `GET /api/providers`
+- 启动方式: `unifin-server` 或 `uvicorn unifin.api.app:app`
+- **新增 Model 后无需修改 API 代码**——自动注册到 REST 端点。
+
+### 11. 自然语言查询模块 (NL)
+
+- `nl/tools.py`: 从 `ModelRegistry` 自动生成 OpenAI function-calling tool 定义。
+- `nl/engine.py`: 接收自然语言问题 → 调用 LLM 生成 tool_calls → 通过 Router 执行 → 返回结构化数据 + 自然语言答案。
+- REST 端点: `POST /api/nl/ask` (自然语言问答)、`GET /api/nl/tools` (导出工具定义)
+- 环境变量: `UNIFIN_LLM_API_KEY`、`UNIFIN_LLM_BASE_URL`、`UNIFIN_LLM_MODEL`
+- **新增 Model 后 NL 工具定义自动更新**——无需修改 NL 代码。
+
+### 12. 数据持久化 (Store)
+
+- 使用 DuckDB 存储在 `~/.unifin/data.duckdb`。
+- `store.save(table, data, dedup_keys)`: 支持 upsert 语义去重。
+- `store.load(table, filters, order_by, limit)`: 支持条件过滤和分页。
+- `store.list_tables()` / `store.table_row_count()`: 元数据查询。
+- Router 在每次成功 fetch 后自动调用 `save()` 持久化结果。
+
+### 13. 全流程自动适配原则
+
+新增一个 Model + Fetcher 后，以下模块 **自动适配**（零手动注册）：
+
+1. **数据持久化** — Router 自动缓存到 DuckDB
+2. **REST API** — FastAPI 自动生成对应 POST 端点
+3. **NL 查询** — 自动生成 OpenAI tool 定义
+4. **SDK** — 通过 `router.query(model_name, query)` 即可调用
 
 ### 10. 测试规范
 
@@ -203,6 +260,7 @@ UnifinError
 
 - Ruff 配置: `target-version = "py311"`, `line-length = 100`
 - 启用规则: `E`(pycodestyle), `F`(pyflakes), `I`(isort), `N`(pep8-naming), `W`(warnings), `UP`(pyupgrade)
+- 忽略规则: `UP042` (保持 `str, Enum` 不改为 `StrEnum`，向后兼容)
 - 所有 import 顶部分组排列（标准库 → 第三方 → 本地），由 ruff isort 管理。
 - 类型注解使用 `from __future__ import annotations`（core 模块中使用）。
 - 模块级 docstring **必须** 包含模块用途的单行描述。

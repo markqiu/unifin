@@ -25,18 +25,24 @@ dependencies = [
     "polars>=1.0",
     "duckdb>=1.0",
     "httpx>=0.27",
+    "pyarrow>=14.0",
 ]
 
 [project.optional-dependencies]
 yfinance = ["yfinance>=0.2.30"]
 # eastmoney = ["EmQuantAPI>=1.0"]  # 暂时禁用，需要从东方财富官网下载
 akshare = ["akshare>=1.0"]
-all = ["unifin[yfinance,akshare]"]
+api = ["fastapi>=0.110", "uvicorn[standard]>=0.28"]
+all = ["unifin[yfinance,akshare,api]"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
+    "httpx",
 ]
+
+[project.scripts]
+unifin-server = "unifin.api.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/unifin"]
@@ -47,6 +53,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["UP042"]  # keep str+Enum (not StrEnum) for backward compat
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

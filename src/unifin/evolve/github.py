@@ -7,6 +7,7 @@ Requires a ``GITHUB_TOKEN`` environment variable with ``issues`` and
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import subprocess
@@ -17,6 +18,11 @@ import httpx
 logger = logging.getLogger("unifin")
 
 _TIMEOUT = 30.0
+
+
+def _b64_token(token: str) -> str:
+    """Encode token for git extraheader (same format as actions/checkout)."""
+    return base64.b64encode(f"x-access-token:{token}".encode()).decode()
 
 
 class GitHubClient:
@@ -191,6 +197,20 @@ class GitHubClient:
             check=False,
             capture_output=True,
         )
+
+        # Configure auth for push (actions/checkout cleans up extraheader)
+        token = os.environ.get("GITHUB_TOKEN", "")
+        if token:
+            subprocess.run(
+                [
+                    "git", "config", "--local",
+                    "http.https://github.com/.extraheader",
+                    f"AUTHORIZATION: basic {_b64_token(token)}",
+                ],
+                check=False,
+                capture_output=True,
+            )
+
         subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
         subprocess.run(
             ["git", "commit", "-m", message],

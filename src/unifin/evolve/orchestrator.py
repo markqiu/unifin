@@ -147,6 +147,23 @@ class Orchestrator:
         user_request = f"{issue['title']}\n\n{issue.get('body', '') or ''}"
         logger.info("Processing issue #%d: %s", issue_number, issue["title"])
 
+        # Pre-check: LLM must be configured
+        if not self._generator.has_llm:
+            error_msg = (
+                "⚠️ **LLM 未配置**\n\n"
+                "自动分析需要配置 LLM API 密钥。请在 GitHub Actions Secrets 中设置以下任一变量：\n"
+                "- `UNIFIN_LLM_API_KEY`\n"
+                "- `OPENAI_API_KEY`\n"
+                "- `ANTHROPIC_API_KEY`\n\n"
+                "配置完成后，请重新触发此 Issue 的处理流程。"
+            )
+            gh.post_comment(issue_number, error_msg)
+            logger.error("LLM API key not configured, cannot process issue #%d", issue_number)
+            raise RuntimeError(
+                "LLM API key is required to process issues. "
+                "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
+            )
+
         # Analyze
         gh.add_labels(issue_number, [LABEL_IN_PROGRESS])
         plan = self.analyze(user_request)

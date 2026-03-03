@@ -245,7 +245,7 @@ class TestGeneratorIntegration:
         gen = CodeGenerator(provider="anthropic", api_key="sk-ant-test")
         assert gen._llm.provider == "anthropic"
 
-    def test_generator_fallback_without_key(self, monkeypatch):
+    def test_generator_raises_without_key(self, monkeypatch):
         monkeypatch.delenv("UNIFIN_LLM_API_KEY", raising=False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -254,7 +254,10 @@ class TestGeneratorIntegration:
 
         gen = CodeGenerator()
         assert gen._llm.has_api_key is False
+        assert gen.has_llm is False
 
-        # Should still work via fallback
-        need = gen.analyze_need("获取基金净值数据")
-        assert need.model_name != ""
+        # Must raise RuntimeError without API key
+        import pytest
+
+        with pytest.raises(RuntimeError, match="LLM API key is required"):
+            gen.analyze_need("获取基金净值数据")

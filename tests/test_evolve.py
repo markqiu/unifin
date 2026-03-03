@@ -264,14 +264,18 @@ class TestCodeGenerator:
         gen = CodeGenerator()
         assert gen is not None
 
-    def test_analyze_need_basic(self):
+    def test_analyze_need_raises_without_llm(self):
         from unifin.evolve.generator import CodeGenerator
 
         gen = CodeGenerator()
-        need = gen.analyze_need("我需要获取开放式基金的每日净值数据")
-        assert isinstance(need, DataNeed)
-        assert need.model_name != ""
-        assert need.category != ""
+        if not gen.has_llm:
+            with pytest.raises(RuntimeError, match="LLM API key is required"):
+                gen.analyze_need("我需要获取开放式基金的每日净值数据")
+        else:
+            # If LLM is configured (e.g. in CI with key), it should succeed
+            need = gen.analyze_need("我需要获取开放式基金的每日净值数据")
+            assert isinstance(need, DataNeed)
+            assert need.model_name != ""
 
     def test_extract_keywords(self):
         from unifin.evolve.generator import CodeGenerator
@@ -305,6 +309,7 @@ class TestCodeGenerator:
             provider="akshare",
             function_name="fund_open_fund_daily_em",
             description="Fund NAV",
+            column_mapping={"净值日期": "date", "单位净值": "nav"},
         )
         plan = gen.generate_plan(need, [src])
         assert isinstance(plan, EvolvePlan)
@@ -344,16 +349,50 @@ class TestOrchestrator:
 
         assert orchestrator is not None
 
-    def test_analyze_returns_plan(self):
+    @staticmethod
+    def _mock_analyze_need(user_request: str) -> DataNeed:
+        """Return a fixed DataNeed for tests (no LLM needed)."""
+        return DataNeed(
+            model_name="fund_nav",
+            category="fund.price",
+            description=user_request[:40],
+            query_fields=[
+                FieldSpec(name="symbol", type=FieldType.STR, description="基金代码"),
+            ],
+            result_fields=[
+                FieldSpec(name="date", type=FieldType.DATE, description="日期"),
+                FieldSpec(name="nav", type=FieldType.FLOAT, description="净值"),
+            ],
+        )
+
+    def _patch_generator(self, monkeypatch):
+        """Patch CodeGenerator to skip LLM calls."""
+        from unifin.evolve.generator import CodeGenerator
+
+        mock = TestOrchestrator._mock_analyze_need
+        monkeypatch.setattr(
+            CodeGenerator, "analyze_need", lambda self, req: mock(req)
+        )
+        monkeypatch.setattr(
+            CodeGenerator,
+            "generate_column_mapping",
+            lambda self, src, need: {},
+        )
+
+    def test_analyze_returns_plan(self, monkeypatch):
         from unifin.evolve.orchestrator import Orchestrator
+
+        self._patch_generator(monkeypatch)
 
         orch = Orchestrator()
         plan = orch.analyze("我需要获取基金净值数据")
         assert isinstance(plan, EvolvePlan)
         assert plan.stage == Stage.DISCOVERED
 
-    def test_analyze_with_provider(self):
+    def test_analyze_with_provider(self, monkeypatch):
         from unifin.evolve.orchestrator import Orchestrator
+
+        self._patch_generator(monkeypatch)
 
         orch = Orchestrator()
         plan = orch.analyze("获取股票分红数据", provider="yfinance")
@@ -367,8 +406,10 @@ class TestOrchestrator:
         orch = Orchestrator()
         assert orch.list_plans() == []
 
-    def test_list_plans_after_analyze(self):
+    def test_list_plans_after_analyze(self, monkeypatch):
         from unifin.evolve.orchestrator import Orchestrator
+
+        self._patch_generator(monkeypatch)
 
         orch = Orchestrator()
         orch.analyze("获取基金净值数据")

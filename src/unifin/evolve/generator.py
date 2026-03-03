@@ -5,7 +5,7 @@ Uses the LLM (OpenAI or Anthropic, auto-detected) to:
 2. Determine column mappings from provider APIs to unified fields.
 3. Generate model + fetcher + test code following project conventions.
 
-Falls back to template-based generation when the LLM is unavailable.
+Requires a configured LLM API key (UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY).
 """
 
 from __future__ import annotations
@@ -112,25 +112,34 @@ class CodeGenerator:
 
     # ── Public API ──
 
-    def analyze_need(self, user_request: str) -> DataNeed:
-        """Use LLM to analyze a user's data request into a DataNeed."""
-        if self._llm.has_api_key:
-            try:
-                return self._llm_analyze(user_request)
-            except Exception as e:
-                logger.warning("LLM analysis failed: %s. Falling back to template.", e)
+    @property
+    def has_llm(self) -> bool:
+        """Whether an LLM API key is configured."""
+        return self._llm.has_api_key
 
-        return self._fallback_analyze(user_request)
+    def analyze_need(self, user_request: str) -> DataNeed:
+        """Use LLM to analyze a user's data request into a DataNeed.
+
+        Raises RuntimeError if no LLM API key is configured.
+        """
+        if not self._llm.has_api_key:
+            raise RuntimeError(
+                "LLM API key is required for analyze_need(). "
+                "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
+            )
+        return self._llm_analyze(user_request)
 
     def generate_column_mapping(self, source: SourceCandidate, need: DataNeed) -> dict[str, str]:
-        """Use LLM to generate column mapping from source to unified model."""
-        if self._llm.has_api_key:
-            try:
-                return self._llm_column_mapping(source, need)
-            except Exception as e:
-                logger.warning("LLM column mapping failed: %s. Falling back.", e)
+        """Use LLM to generate column mapping from source to unified model.
 
-        return self._fallback_column_mapping(source, need)
+        Raises RuntimeError if no LLM API key is configured.
+        """
+        if not self._llm.has_api_key:
+            raise RuntimeError(
+                "LLM API key is required for generate_column_mapping(). "
+                "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
+            )
+        return self._llm_column_mapping(source, need)
 
     def generate_plan(self, need: DataNeed, sources: list[SourceCandidate]) -> EvolvePlan:
         """Generate a complete EvolvePlan with all files to be created."""
@@ -243,121 +252,6 @@ class CodeGenerator:
             has_date_range=data.get("has_date_range", True),
             is_time_series=data.get("is_time_series", True),
         )
-
-    # ── Fallback (no LLM) ──
-
-    @staticmethod
-    def _fallback_analyze(user_request: str) -> DataNeed:
-        """Simple keyword-based analysis when no LLM is available."""
-        request_lower = user_request.lower()
-
-        model_name = "custom_data"
-        category = "misc"
-
-        keyword_map = [
-            (["基金", "净值"], "fund_nav", "fund.price"),
-            (["fund", "nav"], "fund_nav", "fund.price"),
-            (["基金", "持仓"], "fund_holdings", "fund.holdings"),
-            (["fund", "holdings"], "fund_holdings", "fund.holdings"),
-            (["融资", "融券"], "margin_trading", "equity.margin"),
-            (["margin", "trading"], "margin_trading", "equity.margin"),
-            (["基金"], "fund_data", "fund"),
-            (["fund"], "fund_data", "fund"),
-            (["净值"], "fund_nav", "fund.price"),
-            (["期货"], "futures_data", "futures.price"),
-            (["futures"], "futures_data", "futures.price"),
-            (["债券"], "bond_data", "bond.price"),
-            (["bond"], "bond_data", "bond.price"),
-            (["汇率"], "forex_data", "forex"),
-            (["forex"], "forex_data", "forex"),
-            (["宏观"], "macro_data", "macro"),
-            (["macro"], "macro_data", "macro"),
-            (["GDP"], "macro_gdp", "macro.cn"),
-            (["CPI"], "macro_cpi", "macro.cn"),
-            (["龙虎榜"], "top_list", "equity.flow"),
-            (["分红"], "dividend", "equity.dividend"),
-            (["dividend"], "dividend", "equity.dividend"),
-        ]
-
-        for keywords, name, cat in keyword_map:
-            if all(kw in request_lower or kw.lower() in request_lower for kw in keywords):
-                model_name = name
-                category = cat
-                break
-
-        query_fields = [
-            FieldSpec(
-                name="symbol",
-                type=FieldType.STR,
-                required=True,
-                description="标的代码",
-            ),
-            FieldSpec(
-                name="start_date",
-                type=FieldType.DATE,
-                required=False,
-                description="开始日期",
-            ),
-            FieldSpec(
-                name="end_date",
-                type=FieldType.DATE,
-                required=False,
-                description="结束日期",
-            ),
-        ]
-        result_fields = [
-            FieldSpec(name="date", type=FieldType.DATE, required=True, description="日期"),
-            FieldSpec(name="value", type=FieldType.FLOAT, required=False, description="数值"),
-            FieldSpec(name="symbol", type=FieldType.STR, required=False, description="标的代码"),
-        ]
-
-        return DataNeed(
-            model_name=model_name,
-            category=category,
-            description=user_request[:80],
-            query_fields=query_fields,
-            result_fields=result_fields,
-        )
-
-    @staticmethod
-    def _fallback_column_mapping(source: SourceCandidate, need: DataNeed) -> dict[str, str]:
-        """Fuzzy name matching for column mapping."""
-        mapping: dict[str, str] = {}
-        target_names = {f.name for f in need.result_fields}
-
-        common_mappings = {
-            "日期": "date",
-            "净值日期": "date",
-            "date": "date",
-            "开盘": "open",
-            "open": "open",
-            "收盘": "close",
-            "close": "close",
-            "最高": "high",
-            "high": "high",
-            "最低": "low",
-            "low": "low",
-            "成交量": "volume",
-            "volume": "volume",
-            "成交额": "amount",
-            "amount": "amount",
-            "单位净值": "nav",
-            "累计净值": "acc_nav",
-            "日增长率": "daily_return",
-            "涨跌幅": "change_pct",
-            "换手率": "turnover_rate",
-            "振幅": "amplitude",
-            "代码": "symbol",
-            "名称": "name",
-        }
-
-        for src_col in source.sample_columns:
-            if src_col in common_mappings:
-                target = common_mappings[src_col]
-                if target in target_names:
-                    mapping[src_col] = target
-
-        return mapping
 
     @staticmethod
     def _extract_keywords(user_request: str, need: DataNeed) -> list[str]:

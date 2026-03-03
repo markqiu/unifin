@@ -86,7 +86,7 @@ jobs:
     if: >-
       github.event_name == 'issue_comment' &&
       github.event.action == 'created' &&
-      !github.event.comment.user.login == 'github-actions[bot]' &&
+      github.event.comment.user.login != 'github-actions[bot]' &&
       contains(github.event.issue.labels.*.name, 'data-request')
     runs-on: ubuntu-latest
     steps:

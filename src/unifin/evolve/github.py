@@ -139,6 +139,17 @@ class GitHubClient:
     @staticmethod
     def git_add_commit_push(branch_name: str, message: str) -> None:
         """Stage all changes, commit, and push to remote."""
+        # Ensure git user is configured (required in CI environments)
+        subprocess.run(
+            ["git", "config", "user.name", "unifin-bot"],
+            check=False,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "unifin-bot@users.noreply.github.com"],
+            check=False,
+            capture_output=True,
+        )
         subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
         subprocess.run(
             ["git", "commit", "-m", message],

@@ -29,3 +29,4 @@ from unifin.providers.akshare import equity_quote as _eq  # noqa: F401, E402
 from unifin.providers.akshare import equity_search as _es  # noqa: F401, E402
 from unifin.providers.akshare import etf_search as _etf  # noqa: F401, E402
 from unifin.providers.akshare import trade_calendar as _tc  # noqa: F401, E402
+from unifin.providers.akshare import fund_nav  # noqa: F401  # auto-evolved

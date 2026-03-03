@@ -36,6 +36,7 @@ from unifin.models import etf_search as _m9  # noqa: F401, E402
 from unifin.models import income_statement as _m6  # noqa: F401, E402
 from unifin.models import index_historical as _m8  # noqa: F401, E402
 from unifin.models import trade_calendar as _m10  # noqa: F401, E402
+from unifin.models import fund_nav as _m11  # noqa: F401, E402  # auto-evolved
 
 # ── Register providers ──
 # Each provider import triggers self-registration of its fetchers.

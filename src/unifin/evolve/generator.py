@@ -1,6 +1,6 @@
 """LLM-powered code generator — translates DataNeed into working unifin code.
 
-Uses the LLM to:
+Uses the LLM (OpenAI or Anthropic, auto-detected) to:
 1. Understand the user's data need and map it to a model schema.
 2. Determine column mappings from provider APIs to unified fields.
 3. Generate model + fetcher + test code following project conventions.
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from typing import Any
 
@@ -100,23 +99,22 @@ class CodeGenerator:
         api_key: str | None = None,
         base_url: str | None = None,
         model: str | None = None,
+        provider: str | None = None,
     ):
-        self._api_key = (
-            api_key
-            or os.environ.get("UNIFIN_LLM_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or ""
+        from unifin.nl.llm import LLMClient
+
+        self._llm = LLMClient(
+            provider=provider,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
         )
-        self._base_url = (
-            base_url or os.environ.get("UNIFIN_LLM_BASE_URL") or "https://api.openai.com/v1"
-        )
-        self._model = model or os.environ.get("UNIFIN_LLM_MODEL") or "gpt-4o-mini"
 
     # ── Public API ──
 
     def analyze_need(self, user_request: str) -> DataNeed:
         """Use LLM to analyze a user's data request into a DataNeed."""
-        if self._api_key:
+        if self._llm.has_api_key:
             try:
                 return self._llm_analyze(user_request)
             except Exception as e:
@@ -126,7 +124,7 @@ class CodeGenerator:
 
     def generate_column_mapping(self, source: SourceCandidate, need: DataNeed) -> dict[str, str]:
         """Use LLM to generate column mapping from source to unified model."""
-        if self._api_key:
+        if self._llm.has_api_key:
             try:
                 return self._llm_column_mapping(source, need)
             except Exception as e:
@@ -188,7 +186,7 @@ class CodeGenerator:
     # ── LLM helpers ──
 
     def _llm_analyze(self, user_request: str) -> DataNeed:
-        result = self._chat(system=_ANALYZE_SYSTEM_PROMPT, user=user_request)
+        result = self._llm.chat(system=_ANALYZE_SYSTEM_PROMPT, user=user_request)
         data = self._extract_json(result)
         return self._json_to_data_need(data)
 
@@ -200,29 +198,8 @@ class CodeGenerator:
             source_columns=source.sample_columns,
             target_fields=target_fields,
         )
-        result = self._chat(system="You are a data mapping assistant.", user=prompt)
+        result = self._llm.chat(system="You are a data mapping assistant.", user=prompt)
         return self._extract_json(result)
-
-    def _chat(self, system: str, user: str) -> str:
-        import httpx
-
-        headers = {"Content-Type": "application/json"}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
-
-        body = {
-            "model": self._model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "temperature": 0.1,
-        }
-
-        url = f"{self._base_url.rstrip('/')}/chat/completions"
-        resp = httpx.post(url, json=body, headers=headers, timeout=60.0)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
 
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
@@ -310,16 +287,22 @@ class CodeGenerator:
 
         query_fields = [
             FieldSpec(
-                name="symbol", type=FieldType.STR,
-                required=True, description="标的代码",
+                name="symbol",
+                type=FieldType.STR,
+                required=True,
+                description="标的代码",
             ),
             FieldSpec(
-                name="start_date", type=FieldType.DATE,
-                required=False, description="开始日期",
+                name="start_date",
+                type=FieldType.DATE,
+                required=False,
+                description="开始日期",
             ),
             FieldSpec(
-                name="end_date", type=FieldType.DATE,
-                required=False, description="结束日期",
+                name="end_date",
+                type=FieldType.DATE,
+                required=False,
+                description="结束日期",
             ),
         ]
         result_fields = [

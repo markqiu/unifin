@@ -4,14 +4,17 @@ Architecture:
 
 1. ``generate_tools()`` reads the model registry and produces OpenAI-
    compatible function-calling schemas (zero-config for new models).
-2. The user's natural-language question is sent to any OpenAI-compatible LLM
-   together with the tool definitions.
+2. The user's natural-language question is sent to any OpenAI-compatible or
+   Anthropic LLM together with the tool definitions.
 3. The LLM returns a ``tool_calls`` response; we execute each call against
    the ``SmartRouter`` and return the results.
 
 Supported LLM backends:
 - OpenAI API  (``OPENAI_API_KEY``)
 - Any OpenAI-compatible endpoint (``UNIFIN_LLM_BASE_URL`` + ``UNIFIN_LLM_API_KEY``)
+- Anthropic Claude API (``ANTHROPIC_API_KEY``)
+
+Backend is auto-detected or set via ``UNIFIN_LLM_PROVIDER``.
 
 Usage::
 
@@ -26,8 +29,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import Any
+
+from unifin.nl.llm import LLMClient
 
 logger = logging.getLogger("unifin")
 
@@ -66,17 +70,14 @@ class NLEngine:
         api_key: str | None = None,
         base_url: str | None = None,
         model: str | None = None,
+        provider: str | None = None,
     ):
-        self._api_key = (
-            api_key
-            or os.environ.get("UNIFIN_LLM_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or ""
+        self._llm = LLMClient(
+            provider=provider,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
         )
-        self._base_url = (
-            base_url or os.environ.get("UNIFIN_LLM_BASE_URL") or "https://api.openai.com/v1"
-        )
-        self._model = model or os.environ.get("UNIFIN_LLM_MODEL") or "gpt-4o-mini"
         self._tools: list[dict] | None = None  # lazy
 
     @property
@@ -172,24 +173,8 @@ class NLEngine:
     # ── internals ──
 
     def _chat_completion(self, messages: list[dict]) -> dict[str, Any]:
-        """Call the LLM's chat completion endpoint."""
-        import httpx
-
-        headers = {"Content-Type": "application/json"}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
-
-        body: dict[str, Any] = {
-            "model": self._model,
-            "messages": messages,
-            "tools": self.tools,
-            "tool_choice": "auto",
-        }
-
-        url = f"{self._base_url.rstrip('/')}/chat/completions"
-        resp = httpx.post(url, json=body, headers=headers, timeout=60.0)
-        resp.raise_for_status()
-        return resp.json()
+        """Call the LLM via the unified LLMClient."""
+        return self._llm.chat_completion(messages, tools=self.tools, tool_choice="auto")
 
     def _execute_tool(
         self,

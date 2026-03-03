@@ -37,9 +37,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          UNIFIN_LLM_PROVIDER: ${{ secrets.UNIFIN_LLM_PROVIDER }}
           UNIFIN_LLM_API_KEY: ${{ secrets.UNIFIN_LLM_API_KEY }}
           UNIFIN_LLM_BASE_URL: ${{ secrets.UNIFIN_LLM_BASE_URL }}
           UNIFIN_LLM_MODEL: ${{ secrets.UNIFIN_LLM_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           uv run unifin-evolve process-issue \
             --issue-number ${{ github.event.issue.number }}
@@ -70,9 +72,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          UNIFIN_LLM_PROVIDER: ${{ secrets.UNIFIN_LLM_PROVIDER }}
           UNIFIN_LLM_API_KEY: ${{ secrets.UNIFIN_LLM_API_KEY }}
           UNIFIN_LLM_BASE_URL: ${{ secrets.UNIFIN_LLM_BASE_URL }}
           UNIFIN_LLM_MODEL: ${{ secrets.UNIFIN_LLM_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           uv run unifin-evolve process-approval \
             --issue-number ${{ github.event.issue.number }}
@@ -103,9 +107,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          UNIFIN_LLM_PROVIDER: ${{ secrets.UNIFIN_LLM_PROVIDER }}
           UNIFIN_LLM_API_KEY: ${{ secrets.UNIFIN_LLM_API_KEY }}
           UNIFIN_LLM_BASE_URL: ${{ secrets.UNIFIN_LLM_BASE_URL }}
           UNIFIN_LLM_MODEL: ${{ secrets.UNIFIN_LLM_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           uv run unifin-evolve process-comment \
             --issue-number ${{ github.event.issue.number }}

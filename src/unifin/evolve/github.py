@@ -127,12 +127,8 @@ class GitHubClient:
         )
 
         if resp.status_code == 403:
-            logger.warning(
-                "REST API returned 403 for PR creation, trying gh CLI fallback"
-            )
-            return self._create_pr_via_cli(
-                title=title, body=body, head=head, base=base
-            )
+            logger.warning("REST API returned 403 for PR creation, trying gh CLI fallback")
+            return self._create_pr_via_cli(title=title, body=body, head=head, base=base)
 
         resp.raise_for_status()
         pr = resp.json()
@@ -150,11 +146,17 @@ class GitHubClient:
         """Create a PR using the ``gh`` CLI (requires GITHUB_TOKEN env var)."""
         result = subprocess.run(
             [
-                "gh", "pr", "create",
-                "--title", title,
-                "--body", body,
-                "--head", head,
-                "--base", base,
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                title,
+                "--body",
+                body,
+                "--head",
+                head,
+                "--base",
+                base,
             ],
             capture_output=True,
             text=True,
@@ -200,7 +202,10 @@ class GitHubClient:
                 # Set authenticated remote URL directly
                 subprocess.run(
                     [
-                        "git", "remote", "set-url", "origin",
+                        "git",
+                        "remote",
+                        "set-url",
+                        "origin",
                         f"https://x-access-token:{token}@github.com/{repo}.git",
                     ],
                     check=False,

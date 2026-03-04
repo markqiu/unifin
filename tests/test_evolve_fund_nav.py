@@ -44,4 +44,3 @@ class TestFetcherAkshareFundNav:
     def test_supported_exchanges(self):
         fetcher = provider_registry.get_fetcher("fund_nav", "akshare")
         assert len(fetcher.supported_exchanges) > 0
-

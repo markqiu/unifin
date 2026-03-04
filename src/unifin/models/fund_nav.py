@@ -31,8 +31,7 @@ class FundNavQuery(BaseModel):
 
     @model_validator(mode="after")
     def _validate_dates(self) -> "FundNavQuery":
-        if (self.start_date and self.end_date
-                and self.start_date > self.end_date):
+        if self.start_date and self.end_date and self.start_date > self.end_date:
             from unifin.core.errors import InvalidDateRangeError
 
             raise InvalidDateRangeError(self.start_date, self.end_date)

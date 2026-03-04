@@ -501,7 +501,8 @@ class Orchestrator:
                 output = result.stdout + result.stderr
                 # Count issues
                 issue_lines = [
-                    line for line in output.strip().splitlines()
+                    line
+                    for line in output.strip().splitlines()
                     if line.strip() and not line.startswith("All checks")
                 ]
                 return {

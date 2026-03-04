@@ -7,6 +7,7 @@ Source: ak.fund_open_fund_info_em
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Any, ClassVar
 
 from pydantic import BaseModel
@@ -14,6 +15,8 @@ from pydantic import BaseModel
 from unifin.core.fetcher import Fetcher
 from unifin.core.registry import provider_registry
 from unifin.core.types import Exchange
+
+logger = logging.getLogger(__name__)
 
 
 class AkshareFundNavFetcher(Fetcher):
@@ -23,7 +26,14 @@ class AkshareFundNavFetcher(Fetcher):
     model_name: ClassVar[str] = "fund_nav"
     supported_exchanges: ClassVar[list[Exchange]] = [Exchange.XSHG, Exchange.XSHE]
 
-    supported_fields: ClassVar[list[str]] = ['date', 'nav', 'acc_nav', 'daily_return', 'symbol', 'name']
+    supported_fields: ClassVar[list[str]] = [
+        "date",
+        "nav",
+        "acc_nav",
+        "daily_return",
+        "symbol",
+        "name",
+    ]
     data_delay: ClassVar[str] = "eod"
     notes: ClassVar[str] = ""
 
@@ -48,23 +58,39 @@ class AkshareFundNavFetcher(Fetcher):
     ) -> Any:
         try:
             import akshare as ak
-        except ImportError:
-            raise ImportError("akshare is not installed. pip install 'unifin[akshare]'")
+        except ImportError as e:
+            msg = "akshare is not installed. pip install 'unifin[akshare]'"
+            raise ImportError(msg) from e
 
         try:
             df = ak.fund_open_fund_info_em(
                 symbol=params["symbol"],
+                period="0000",
+                start_date=params["start_date"],
+                end_date=params["end_date"],
             )
             return df
-        except Exception:
-            return None
+        except Exception as e:
+            logger.error(
+                "Failed to fetch fund_nav from akshare: symbol=%s, error=%s",
+                params.get("symbol"),
+                e,
+            )
+            raise
 
     @staticmethod
     def transform_data(raw_data: Any, query: BaseModel) -> list[dict[str, Any]]:
-        if raw_data is None or (hasattr(raw_data, 'empty') and raw_data.empty):
+        if raw_data is None or (hasattr(raw_data, "empty") and raw_data.empty):
             return []
 
-        col_map = {'净值日期': 'date', '单位净值': 'nav', '累计净值': 'acc_nav', '日增长率': 'daily_return'}
+        col_map = {
+            "净值日期": "date",
+            "单位净值": "nav",
+            "累计净值": "acc_nav",
+            "日增长率": "daily_return",
+            "基金代码": "symbol",
+            "基金名称": "name",
+        }
 
         records = raw_data.to_dict(orient="records")
         results = []
@@ -72,7 +98,12 @@ class AkshareFundNavFetcher(Fetcher):
             mapped = {}
             for src_col, dst_col in col_map.items():
                 if src_col in row:
-                    mapped[dst_col] = row[src_col]
+                    value = row[src_col]
+                    # Parse date strings to dt.date objects
+                    if dst_col == "date" and isinstance(value, str):
+                        value = dt.datetime.strptime(value, "%Y-%m-%d").date()
+                    mapped[dst_col] = value
+
             mapped.setdefault("nav", None)
             mapped.setdefault("acc_nav", None)
             mapped.setdefault("daily_return", None)

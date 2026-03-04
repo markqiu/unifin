@@ -370,9 +370,7 @@ class TestOrchestrator:
         from unifin.evolve.generator import CodeGenerator
 
         mock = TestOrchestrator._mock_analyze_need
-        monkeypatch.setattr(
-            CodeGenerator, "analyze_need", lambda self, req: mock(req)
-        )
+        monkeypatch.setattr(CodeGenerator, "analyze_need", lambda self, req: mock(req))
         monkeypatch.setattr(
             CodeGenerator,
             "generate_column_mapping",

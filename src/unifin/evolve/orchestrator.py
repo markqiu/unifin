@@ -615,7 +615,10 @@ class Orchestrator:
                         action,
                     )
                     action = "fix_pr"
-            elif last_action == "fix" and stage == "fix_attempted":
+            elif last_action == "fix" and stage in (
+                "fix_attempted",
+                "reviewed_changes_requested",
+            ):
                 # Latest comment is a fix → next step is review
                 if action != "review_pr":
                     logger.info(

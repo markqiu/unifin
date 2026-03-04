@@ -728,11 +728,23 @@ class Orchestrator:
 
         if needs_fix:
             # Check if fix already attempted
-            fix_done = any(
-                "修复已提交" in c.get("body", "") or "跳过" in c.get("body", "")
-                for c in bot_comments
-            )
-            if not fix_done:
+            fix_pushed = any("修复已提交" in c.get("body", "") for c in bot_comments)
+            fix_skipped = any("跳过" in c.get("body", "") for c in bot_comments)
+            if fix_skipped:
+                return {
+                    "stage": "fix_attempted",
+                    "needs_action": "none",
+                    "confidence": 0.7,
+                    "reasoning": "Fix was skipped, human intervention needed (keyword fallback)",
+                }
+            if fix_pushed:
+                return {
+                    "stage": "fix_attempted",
+                    "needs_action": "review_pr",
+                    "confidence": 0.7,
+                    "reasoning": "Fix was pushed, needs re-review (keyword fallback)",
+                }
+            if not fix_pushed:
                 return {
                     "stage": "reviewed_changes_requested",
                     "needs_action": "fix_pr",

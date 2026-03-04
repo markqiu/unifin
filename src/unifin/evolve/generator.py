@@ -172,8 +172,18 @@ Stage definitions:
 - pr_created: PR was created, awaiting review
 - reviewed_approved: PR was reviewed and approved, ready to merge
 - reviewed_changes_requested: PR was reviewed and changes were requested, no fix yet
-- fix_attempted: A fix was already pushed after the review
+- fix_attempted: A fix was already pushed after the review, needs re-review
 - unknown: Cannot determine
+
+Action rules:
+- not_analyzed → analyze
+- analyzed_pending_approval → none (wait for user)
+- approved_pending_pr → process_approval
+- pr_created (no review yet) → review_pr
+- reviewed_approved → none
+- reviewed_changes_requested (no fix yet) → fix_pr
+- fix_attempted (fix was pushed, needs re-review) → review_pr
+- If latest comment is "跳过自动修复" (skip fix), the action is → none (human needed)
 
 IMPORTANT:
 - Read the ACTUAL content of comments, not just their existence

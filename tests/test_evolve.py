@@ -914,6 +914,29 @@ class TestKeywordFallback:
             },
         ]
         result = Orchestrator._keyword_fallback(comments=comments, labels=[])
+        assert result["needs_action"] == "review_pr"
+        assert result["stage"] == "fix_attempted"
+
+    def test_review_with_fix_skipped(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        comments = [
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": marker + "\n/pull/9",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "🤖 审查报告\n请修复后重新提交",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "跳过自动修复",
+            },
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=[])
         assert result["needs_action"] == "none"
 
     def test_fallback_returns_confidence(self):

@@ -90,6 +90,29 @@ def cmd_process_comment(args: argparse.Namespace) -> None:
         logger.info("No actionable command in latest comment on issue #%d", args.issue_number)
 
 
+def cmd_review_pr(args: argparse.Namespace) -> None:
+    """Run automated tests and LLM review on a pull request."""
+    from unifin.evolve.orchestrator import orchestrator
+
+    logger.info("Reviewing PR #%d ...", args.pr_number)
+    result = orchestrator.review_pr(args.pr_number)
+    print(
+        json.dumps(
+            {
+                "pr_number": result.get("pr_number"),
+                "branch": result.get("branch"),
+                "tests_passed": result.get("tests", {}).get("success"),
+                "lint_passed": result.get("lint", {}).get("success"),
+                "review_event": result.get("review_event"),
+                "review_posted": result.get("review_posted"),
+                "changed_files": result.get("changed_files", []),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
 def cmd_analyze(args: argparse.Namespace) -> None:
     """Analyze a data request locally (for testing / debugging)."""
     from unifin.evolve.orchestrator import orchestrator
@@ -130,6 +153,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_comment.add_argument("--issue-number", type=int, required=True)
     p_comment.set_defaults(func=cmd_process_comment)
+
+    # review-pr
+    p_review = subparsers.add_parser(
+        "review-pr",
+        help="Run automated tests and LLM code review on a pull request",
+    )
+    p_review.add_argument("--pr-number", type=int, required=True)
+    p_review.set_defaults(func=cmd_review_pr)
 
     # analyze (local debug)
     p_analyze = subparsers.add_parser(

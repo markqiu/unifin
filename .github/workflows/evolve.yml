@@ -5,6 +5,9 @@ on:
     types: [opened, labeled]
   issue_comment:
     types: [created]
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
 
 permissions:
   issues: write
@@ -115,3 +118,39 @@ jobs:
         run: |
           uv run unifin-evolve process-comment \
             --issue-number ${{ github.event.issue.number }}
+
+  # ─── Trigger: PR opened/updated from evolve/* branch ───
+  review-pr:
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.event.pull_request.head.ref, 'evolve/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install unifin
+        run: uv sync --extra dev --extra all
+
+      - name: Review PR (tests + lint + LLM review)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          UNIFIN_LLM_PROVIDER: ${{ vars.UNIFIN_LLM_PROVIDER }}
+          UNIFIN_LLM_API_KEY: ${{ secrets.UNIFIN_LLM_API_KEY }}
+          UNIFIN_LLM_BASE_URL: ${{ vars.UNIFIN_LLM_BASE_URL }}
+          UNIFIN_LLM_MODEL: ${{ vars.UNIFIN_LLM_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          uv run unifin-evolve review-pr \
+            --pr-number ${{ github.event.pull_request.number }}

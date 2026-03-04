@@ -2,10 +2,9 @@
 
 import datetime as dt
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from unifin.core.registry import ModelInfo, model_registry
-from unifin.core.symbol import validate_symbol
 
 
 class FundNavQuery(BaseModel):
@@ -23,11 +22,6 @@ class FundNavQuery(BaseModel):
         default=None,
         description="结束日期",
     )
-
-    @field_validator("symbol")
-    @classmethod
-    def _check_symbol(cls, v: str) -> str:
-        return validate_symbol(v)
 
     @model_validator(mode="after")
     def _validate_dates(self) -> "FundNavQuery":

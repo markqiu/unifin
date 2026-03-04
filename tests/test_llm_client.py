@@ -64,6 +64,7 @@ class TestLLMClientInit:
     def test_anthropic_from_provider_param(self, monkeypatch):
         monkeypatch.delenv("UNIFIN_LLM_PROVIDER", raising=False)
         monkeypatch.delenv("UNIFIN_LLM_MODEL", raising=False)
+        monkeypatch.delenv("UNIFIN_LLM_BASE_URL", raising=False)
 
         client = LLMClient(provider="anthropic", api_key="sk-ant-test")
         assert client.provider == "anthropic"

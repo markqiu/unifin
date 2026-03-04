@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 # ──────────────────────────────────────────────
 # 1. Model registration tests
 # ──────────────────────────────────────────────
@@ -265,3 +267,202 @@ class TestFundNavModel:
         assert d.daily_return == 0.5
         assert d.symbol == "000001"
         assert d.name == "测试基金"
+
+
+# ──────────────────────────────────────────────
+# 4. SDK namespace tests
+# ──────────────────────────────────────────────
+
+
+class TestSDKNamespace:
+    """Verify SDK public functions are accessible."""
+
+    def test_equity_functions(self):
+        import unifin
+
+        assert callable(unifin.equity.historical)
+        assert callable(unifin.equity.search)
+        assert callable(unifin.equity.profile)
+        assert callable(unifin.equity.quote)
+        assert callable(unifin.equity.balance_sheet)
+        assert callable(unifin.equity.income_statement)
+        assert callable(unifin.equity.cash_flow)
+
+    def test_index_functions(self):
+        import unifin
+
+        assert callable(unifin.index.historical)
+
+    def test_etf_functions(self):
+        import unifin
+
+        assert callable(unifin.etf.search)
+
+    def test_market_functions(self):
+        import unifin
+
+        assert callable(unifin.market.trade_calendar)
+
+
+# ──────────────────────────────────────────────
+# 5. End-to-end integration tests (yfinance)
+# ──────────────────────────────────────────────
+
+
+def _yfinance_available() -> bool:
+    try:
+        import yfinance  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+@pytest.mark.skipif(not _yfinance_available(), reason="yfinance not installed")
+class TestEndToEndYFinance:
+    """Integration tests that fetch real data via yfinance."""
+
+    def test_equity_search(self):
+        import unifin
+
+        df = unifin.equity.search("Apple")
+        assert len(df) > 0
+        assert "symbol" in df.columns
+        assert "name" in df.columns
+        print(f"\n  equity.search('Apple') → {len(df)} results")
+        print(df.head(3))
+
+    def test_equity_profile(self):
+        import unifin
+
+        df = unifin.equity.profile("AAPL")
+        assert len(df) == 1
+        assert "symbol" in df.columns
+        assert "sector" in df.columns
+        row = df.to_dicts()[0]
+        assert row["symbol"] == "AAPL"
+        sector = row.get("sector")
+        mktcap = row.get("market_cap")
+        print(f"\n  equity.profile('AAPL'): sector={sector}, mktcap={mktcap}")
+
+    def test_equity_quote(self):
+        import unifin
+
+        df = unifin.equity.quote("AAPL")
+        assert len(df) == 1
+        row = df.to_dicts()[0]
+        assert row["symbol"] == "AAPL"
+        assert row.get("last_price") is not None or row.get("close") is not None
+        print(f"\n  equity.quote('AAPL'): price={row.get('last_price')}")
+
+    def test_balance_sheet(self):
+        import unifin
+
+        df = unifin.equity.balance_sheet("AAPL")
+        assert len(df) > 0
+        assert "period_ending" in df.columns
+        assert "total_assets" in df.columns
+        print(f"\n  equity.balance_sheet('AAPL') → {len(df)} periods")
+        print(df.select("period_ending", "total_assets", "total_liabilities").head())
+
+    def test_income_statement(self):
+        import unifin
+
+        df = unifin.equity.income_statement("AAPL")
+        assert len(df) > 0
+        assert "total_revenue" in df.columns
+        assert "net_income" in df.columns
+        print(f"\n  equity.income_statement('AAPL') → {len(df)} periods")
+        print(df.select("period_ending", "total_revenue", "net_income").head())
+
+    def test_cash_flow(self):
+        import unifin
+
+        df = unifin.equity.cash_flow("AAPL")
+        assert len(df) > 0
+        assert "net_cash_from_operations" in df.columns
+        print(f"\n  equity.cash_flow('AAPL') → {len(df)} periods")
+        print(df.select("period_ending", "net_cash_from_operations", "free_cash_flow").head())
+
+    def test_index_historical(self):
+        import unifin
+
+        df = unifin.index.historical("^GSPC", start_date="2024-01-02", end_date="2024-01-10")
+        assert len(df) > 0
+        assert "close" in df.columns
+        print(f"\n  index.historical('^GSPC') → {len(df)} rows")
+        print(df.head())
+
+    def test_quarterly_balance_sheet(self):
+        import unifin
+
+        df = unifin.equity.balance_sheet("AAPL", period="quarter", limit=2)
+        assert len(df) > 0
+        # yfinance may return more rows than `limit` requests
+        assert len(df) <= 8
+        print(f"\n  quarterly balance_sheet → {len(df)} periods")
+
+
+# ──────────────────────────────────────────────
+# 7. Strict typing & validation tests
+# ──────────────────────────────────────────────
+
+
+class TestStrictTyping:
+    """Verify strict type checking for Query models."""
+
+    def test_period_enum_rejects_invalid(self):
+        """period='monthly' should be rejected."""
+        from pydantic import ValidationError
+
+        from unifin.models.balance_sheet import BalanceSheetQuery
+
+        with pytest.raises(ValidationError):
+            BalanceSheetQuery(symbol="AAPL", period="monthly")
+
+    def test_period_enum_accepts_valid(self):
+        from unifin.core.types import Period
+        from unifin.models.balance_sheet import BalanceSheetQuery
+
+        q = BalanceSheetQuery(symbol="AAPL", period="quarter")
+        assert q.period == Period.QUARTER
+
+        q2 = BalanceSheetQuery(symbol="AAPL", period=Period.ANNUAL)
+        assert q2.period == Period.ANNUAL
+
+    def test_market_enum_rejects_invalid(self):
+        from pydantic import ValidationError
+
+        from unifin.models.trade_calendar import TradeCalendarQuery
+
+        with pytest.raises(ValidationError):
+            TradeCalendarQuery(market="mars")
+
+    def test_market_enum_accepts_valid(self):
+        from unifin.core.types import Market
+        from unifin.models.trade_calendar import TradeCalendarQuery
+
+        q = TradeCalendarQuery(market="us")
+        assert q.market == Market.US
+
+    def test_date_range_validation(self):
+        """start_date > end_date should raise."""
+        from pydantic import ValidationError
+
+        from unifin.models.equity_historical import EquityHistoricalQuery
+
+        with pytest.raises(ValidationError, match="start_date"):
+            EquityHistoricalQuery(
+                symbol="AAPL",
+                start_date=date(2024, 12, 31),
+                end_date=date(2024, 1, 1),
+            )
+
+    def test_date_range_valid(self):
+        from unifin.models.equity_historical import EquityHistoricalQuery
+
+        q = EquityHistoricalQuery(  # noqa: F841
+            symbol="AAPL",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+        )

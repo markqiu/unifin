@@ -302,6 +302,9 @@ class Orchestrator:
         head_branch = pr["head"]["ref"]
         logger.info("Reviewing PR #%d (%s)", pr_number, head_branch)
 
+        # Checkout PR branch so tests and lint run against PR code
+        self._checkout_branch(head_branch)
+
         result: dict[str, Any] = {"pr_number": pr_number, "branch": head_branch}
 
         # 1. Run test suite
@@ -368,6 +371,438 @@ class Orchestrator:
                 result["review_posted"] = False
 
         return result
+
+    def fix_pr(
+        self,
+        pr_number: int,
+        gh: GitHubClient | None = None,
+        *,
+        max_attempts: int = 1,
+    ) -> dict[str, Any]:
+        """Auto-fix issues found in a PR review.
+
+        1. Check if the latest commit is from unifin-bot (loop guard)
+        2. Run ``ruff check --fix`` + ``ruff format`` for lint fixes
+        3. Use LLM to fix code issues based on the review
+        4. Commit and push fixes (triggers re-review via synchronize)
+
+        Parameters
+        ----------
+        pr_number : int
+            PR number to fix.
+        max_attempts : int
+            Guard against runaway loops (default 1 fix per review cycle).
+        """
+        gh = gh or GitHubClient()
+        pr = gh.get_pull_request(pr_number)
+        head_branch = pr["head"]["ref"]
+        logger.info("Attempting to fix PR #%d (%s)", pr_number, head_branch)
+
+        result: dict[str, Any] = {
+            "pr_number": pr_number,
+            "branch": head_branch,
+        }
+
+        # Checkout the PR branch so fixes apply to the right codebase
+        self._checkout_branch(head_branch)
+
+        # Loop guard: skip if latest commit is from bot AND no new review after it
+        if self._is_bot_commit():
+            comments = gh.get_issue_comments(pr_number)
+            if not self._has_new_review_after_fix(comments):
+                logger.info(
+                    "Latest commit is from unifin-bot and no new review found, "
+                    "skipping fix to prevent infinite loop."
+                )
+                result["skipped"] = True
+                result["reason"] = "bot_commit"
+                gh.post_pr_comment(
+                    pr_number,
+                    "⏭️ 跳过自动修复（最近的 commit 已由 bot 提交，"
+                    "且无新审查，避免无限循环）。请人工检查剩余问题。",
+                )
+                return result
+            logger.info(
+                "Latest commit is from bot, but a new review was posted — "
+                "allowing another fix attempt."
+            )
+
+        fixes_applied: list[str] = []
+
+        # Step 1: Auto-fix lint issues with ruff
+        lint_fixed = self._auto_fix_lint()
+        if lint_fixed["changed"]:
+            fixes_applied.append(f"ruff 自动修复 {lint_fixed.get('fix_count', '?')} 个问题")
+        result["lint_fix"] = lint_fixed
+
+        # Step 2: LLM-powered code fix
+        llm_fix_result: dict[str, Any] = {"applied": False}
+        if self._generator.has_llm:
+            try:
+                llm_fix_result = self._llm_fix_pr(pr_number, gh)
+                if llm_fix_result.get("applied"):
+                    fixes_applied.append(f"AI 修复: {llm_fix_result.get('summary', '?')}")
+            except Exception as e:
+                logger.warning("LLM fix failed: %s", e)
+                llm_fix_result["error"] = str(e)
+        result["llm_fix"] = llm_fix_result
+
+        # Step 3: Commit and push if any fixes were applied
+        if fixes_applied:
+            try:
+                commit_msg = "fix: auto-fix issues from PR review\n\n"
+                commit_msg += "\n".join(f"- {f}" for f in fixes_applied)
+                gh.git_add_commit_push_fix(head_branch, commit_msg)
+                result["pushed"] = True
+                result["fixes"] = fixes_applied
+
+                gh.post_pr_comment(
+                    pr_number,
+                    "🔧 **自动修复已提交**\n\n"
+                    + "\n".join(f"- {f}" for f in fixes_applied)
+                    + "\n\n将自动触发重新审查。",
+                )
+            except Exception as e:
+                logger.error("Failed to push fixes: %s", e)
+                result["push_error"] = str(e)
+        else:
+            result["pushed"] = False
+            result["reason"] = "no_fixable_issues"
+            gh.post_pr_comment(
+                pr_number,
+                "ℹ️ 自动修复未发现可自动处理的问题，请人工检查。",
+            )
+
+        return result
+
+    @staticmethod
+    def _checkout_branch(branch: str) -> None:
+        """Fetch and checkout a remote branch locally."""
+        subprocess.run(
+            ["git", "fetch", "origin", branch],
+            check=True,
+            capture_output=True,
+        )
+        # Try checkout; if the local branch doesn't exist, create it
+        result = subprocess.run(
+            ["git", "checkout", branch],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            subprocess.run(
+                ["git", "checkout", "-b", branch, f"origin/{branch}"],
+                check=True,
+                capture_output=True,
+            )
+        logger.info("Checked out branch %s", branch)
+
+    # ===================================================================
+    # Passive scanning (backup for missed events)
+    # ===================================================================
+
+    def scan_pending_issues(
+        self,
+        gh: GitHubClient | None = None,
+        *,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Scan all data-request issues and PRs for pending tasks.
+
+        Uses LLM to read all comments and determine the current status and
+        needed action for each issue/PR.  Falls back to basic heuristics when
+        LLM is not configured.
+
+        Parameters
+        ----------
+        dry_run : bool
+            If True, only report what would be done without taking action.
+
+        Returns
+        -------
+        dict with counts and actions taken.
+        """
+        gh = gh or GitHubClient()
+        result: dict[str, Any] = {
+            "scanned": True,
+            "dry_run": dry_run,
+            "pending_analysis": [],
+            "pending_approval_processing": [],
+            "pending_reviews": [],
+            "pending_fixes": [],
+            "actions_taken": [],
+        }
+
+        # 1. Scan data-request issues
+        issues = gh.list_issues(state="open", labels="data-request")
+        logger.info("Found %d open data-request issues", len(issues))
+
+        for issue in issues:
+            issue_number = issue["number"]
+            labels = [lb["name"] for lb in issue.get("labels", [])]
+            comments = gh.get_issue_comments(issue_number)
+
+            status = self._analyze_status(
+                title=issue.get("title", ""),
+                body=issue.get("body", ""),
+                comments=comments,
+                labels=labels,
+            )
+            action = status.get("needs_action", "none")
+            logger.info(
+                "Issue #%d: stage=%s, action=%s (confidence=%.2f, reason=%s)",
+                issue_number,
+                status.get("stage"),
+                action,
+                status.get("confidence", 0),
+                status.get("reasoning", ""),
+            )
+
+            if action == "analyze":
+                result["pending_analysis"].append(issue_number)
+                if not dry_run:
+                    try:
+                        self.process_new_issue(issue_number)
+                        result["actions_taken"].append(
+                            {"issue": issue_number, "action": "analyzed"}
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to analyze issue #%d: %s", issue_number, e)
+
+            elif action == "process_approval":
+                result["pending_approval_processing"].append(issue_number)
+                if not dry_run:
+                    try:
+                        approval_result = self.process_approval(issue_number)
+                        result["actions_taken"].append(
+                            {
+                                "issue": issue_number,
+                                "action": "processed_approval",
+                                "pr_number": approval_result.get("pr_number"),
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to process approval #%d: %s", issue_number, e)
+
+        # 2. Scan open PRs from evolve/* branches
+        prs = gh.list_pull_requests(state="open")
+        evolve_prs = [pr for pr in prs if pr.get("head", {}).get("ref", "").startswith("evolve/")]
+
+        for pr in evolve_prs:
+            pr_number = pr["number"]
+            comments = gh.get_issue_comments(pr_number)
+
+            status = self._analyze_status(
+                title=pr.get("title", ""),
+                body=pr.get("body", ""),
+                comments=comments,
+                labels=[lb["name"] for lb in pr.get("labels", [])],
+            )
+            action = status.get("needs_action", "none")
+            stage = status.get("stage", "unknown")
+
+            # Chronological override: determine action from comment order
+            # This is more reliable than LLM for fix/review cycle decisions
+            last_action = self._detect_last_action(comments)
+            if last_action == "review_request_changes":
+                # Latest comment is a review requesting changes → next step is fix
+                if action != "fix_pr":
+                    logger.info(
+                        "PR #%d: overriding action %s → fix_pr (latest review requests changes)",
+                        pr_number,
+                        action,
+                    )
+                    action = "fix_pr"
+            elif last_action == "review_approve":
+                # Latest review approved the PR → no more action needed
+                logger.info(
+                    "PR #%d: latest review approved — no further action needed",
+                    pr_number,
+                )
+                action = "none"
+            elif last_action in ("fix", "skip"):
+                # Latest comment is a fix → next step is review
+                if action != "review_pr":
+                    logger.info(
+                        "PR #%d: overriding action %s → review_pr (latest comment is a fix)",
+                        pr_number,
+                        action,
+                    )
+                    action = "review_pr"
+
+            logger.info(
+                "PR #%d: stage=%s, action=%s (confidence=%.2f, reason=%s)",
+                pr_number,
+                stage,
+                action,
+                status.get("confidence", 0),
+                status.get("reasoning", ""),
+            )
+
+            if action == "review_pr":
+                result["pending_reviews"].append(pr_number)
+                if not dry_run:
+                    try:
+                        self.review_pr(pr_number)
+                        result["actions_taken"].append({"pr": pr_number, "action": "reviewed"})
+                    except Exception as e:
+                        logger.warning("Failed to review PR #%d: %s", pr_number, e)
+
+            elif action == "fix_pr":
+                result["pending_fixes"].append(pr_number)
+                if not dry_run:
+                    try:
+                        fix_result = self.fix_pr(pr_number, gh=gh)
+                        result["actions_taken"].append(
+                            {
+                                "pr": pr_number,
+                                "action": "fixed",
+                                "pushed": fix_result.get("pushed", False),
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to auto-fix PR #%d: %s", pr_number, e)
+
+        # Summary
+        result["summary"] = {
+            "pending_analysis_count": len(result["pending_analysis"]),
+            "pending_approval_count": len(result["pending_approval_processing"]),
+            "pending_review_count": len(result["pending_reviews"]),
+            "pending_fix_count": len(result["pending_fixes"]),
+            "actions_taken_count": len(result["actions_taken"]),
+        }
+
+        return result
+
+    def _analyze_status(
+        self,
+        title: str,
+        body: str,
+        comments: list[dict[str, Any]],
+        labels: list[str],
+    ) -> dict[str, Any]:
+        """Determine issue/PR status using LLM, with keyword fallback.
+
+        Tries LLM analysis first.  If LLM is not configured or returns
+        low-confidence / unknown, falls back to deterministic heuristics.
+        """
+        comment_dicts = [
+            {
+                "author": c.get("user", {}).get("login", "unknown"),
+                "body": c.get("body", ""),
+                "created_at": c.get("created_at", ""),
+            }
+            for c in comments
+        ]
+
+        status = self._generator.analyze_pr_status(
+            title=title,
+            body=body,
+            comments=comment_dicts,
+            labels=labels,
+        )
+
+        # Trust LLM result when confidence is reasonable
+        confidence = status.get("confidence", 0)
+        if isinstance(confidence, (int, float)) and confidence >= 0.5:
+            return status
+
+        # Fallback: basic deterministic heuristics
+        logger.debug("LLM confidence too low (%.2f), using heuristic fallback", confidence)
+        return self._keyword_fallback(comments, labels)
+
+    @staticmethod
+    def _keyword_fallback(
+        comments: list[dict[str, Any]],
+        labels: list[str],
+    ) -> dict[str, Any]:
+        """Simple keyword heuristics — used when LLM is unavailable."""
+        bot_comments = [
+            c
+            for c in comments
+            if c.get("user", {}).get("login") == "github-actions[bot]"
+            or c.get("user", {}).get("type") == "Bot"
+        ]
+
+        has_discovered = any(
+            _stage_marker(Stage.DISCOVERED) in c.get("body", "") for c in bot_comments
+        )
+        has_pr = any(
+            "pull" in c.get("body", "").lower() and "/pull/" in c.get("body", "")
+            for c in bot_comments
+        )
+        has_approved = "approved" in labels
+
+        # Issue-level checks
+        if not has_discovered:
+            return {
+                "stage": "not_analyzed",
+                "needs_action": "analyze",
+                "confidence": 0.8,
+                "reasoning": "No analysis comment found (keyword fallback)",
+            }
+        if has_approved and not has_pr:
+            return {
+                "stage": "approved_pending_pr",
+                "needs_action": "process_approval",
+                "confidence": 0.8,
+                "reasoning": "Approved label present but no PR link (keyword fallback)",
+            }
+
+        # PR-level checks (review / fix)
+        has_review = any(
+            "\U0001f916" in c.get("body", "") or "审查报告" in c.get("body", "")
+            for c in bot_comments
+        )
+        if not has_review:
+            return {
+                "stage": "pr_created",
+                "needs_action": "review_pr",
+                "confidence": 0.8,
+                "reasoning": "No review comment found (keyword fallback)",
+            }
+
+        # Check if changes requested
+        needs_fix = False
+        for c in reversed(bot_comments):
+            b = c.get("body", "")
+            if "审查报告" in b or "\U0001f916" in b:
+                if "请修复" in b or "CHANGES_REQUESTED" in b or "需要修改" in b:
+                    needs_fix = True
+                break
+
+        if needs_fix:
+            # Check if fix already attempted
+            fix_pushed = any("修复已提交" in c.get("body", "") for c in bot_comments)
+            fix_skipped = any("跳过" in c.get("body", "") for c in bot_comments)
+            if fix_skipped:
+                return {
+                    "stage": "fix_attempted",
+                    "needs_action": "none",
+                    "confidence": 0.7,
+                    "reasoning": "Fix was skipped, human intervention needed (keyword fallback)",
+                }
+            if fix_pushed:
+                return {
+                    "stage": "fix_attempted",
+                    "needs_action": "review_pr",
+                    "confidence": 0.7,
+                    "reasoning": "Fix was pushed, needs re-review (keyword fallback)",
+                }
+            if not fix_pushed:
+                return {
+                    "stage": "reviewed_changes_requested",
+                    "needs_action": "fix_pr",
+                    "confidence": 0.7,
+                    "reasoning": "Review requested changes, no fix yet (keyword fallback)",
+                }
+
+        return {
+            "stage": "unknown",
+            "needs_action": "none",
+            "confidence": 0.5,
+            "reasoning": "No pending action detected (keyword fallback)",
+        }
 
     # ===================================================================
     # Comment building
@@ -605,6 +1040,194 @@ class Orchestrator:
     # ===================================================================
     # Internal helpers
     # ===================================================================
+
+    @staticmethod
+    def _detect_last_action(comments: list[dict[str, Any]]) -> str:
+        """Determine whether the most recent bot action was a review or fix.
+
+        Returns "review_approve", "review_request_changes", "fix", "skip", or "none".
+        A review that says "建议合并" is an approve; otherwise request-changes.
+        """
+        last_action = "none"
+        for c in comments:
+            body = c.get("body", "")
+            if "审查报告" in body:
+                if "建议合并" in body:
+                    last_action = "review_approve"
+                else:
+                    last_action = "review_request_changes"
+            elif "修复已提交" in body or "自动修复未发现" in body:
+                last_action = "fix"
+            elif "跳过自动修复" in body:
+                last_action = "skip"
+        return last_action
+
+    @staticmethod
+    def _has_new_review_after_fix(comments: list[dict[str, Any]]) -> bool:
+        """Check if a review comment exists after the last fix comment.
+
+        Returns True if there is a review (审查报告) comment that appears
+        chronologically after the last fix (修复已提交/跳过自动修复) comment.
+        """
+        last_fix_idx = -1
+        last_review_idx = -1
+        for i, c in enumerate(comments):
+            body = c.get("body", "")
+            if "修复已提交" in body or "跳过自动修复" in body or "自动修复未发现" in body:
+                last_fix_idx = i
+            if "审查报告" in body:
+                last_review_idx = i
+        return last_review_idx > last_fix_idx and last_fix_idx >= 0
+
+    @staticmethod
+    def _is_bot_commit() -> bool:
+        """Check if the latest commit was made by unifin-bot."""
+        try:
+            result = subprocess.run(
+                ["git", "log", "-1", "--format=%an"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            author = result.stdout.strip()
+            return author == "unifin-bot"
+        except Exception:
+            return False
+
+    @staticmethod
+    def _auto_fix_lint() -> dict[str, Any]:
+        """Run ruff check --fix and ruff format to auto-fix lint issues."""
+        changed = False
+        fix_count = 0
+
+        for fix_cmd in [
+            ["uv", "run", "ruff", "check", "--fix", "src/", "tests/"],
+            ["ruff", "check", "--fix", "src/", "tests/"],
+        ]:
+            try:
+                result = subprocess.run(
+                    fix_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                # Count fixed issues from output
+                for line in result.stderr.splitlines():
+                    if "fixed" in line.lower():
+                        # e.g. "Found 3 errors (2 fixed, 1 remaining)."
+                        import re
+
+                        m = re.search(r"(\d+)\s+fixed", line)
+                        if m:
+                            fix_count = int(m.group(1))
+                changed = fix_count > 0
+                break
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                return {"changed": False, "error": "ruff timeout"}
+
+        # Also run ruff format
+        for fmt_cmd in [
+            ["uv", "run", "ruff", "format", "src/", "tests/"],
+            ["ruff", "format", "src/", "tests/"],
+        ]:
+            try:
+                fmt_result = subprocess.run(
+                    fmt_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                # Check if files were reformatted
+                if "file" in fmt_result.stderr.lower():
+                    changed = True
+                break
+            except FileNotFoundError:
+                continue
+            except subprocess.TimeoutExpired:
+                pass
+
+        # Check git diff to confirm actual changes
+        try:
+            diff_result = subprocess.run(
+                ["git", "diff", "--stat"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if diff_result.stdout.strip():
+                changed = True
+        except Exception:
+            pass
+
+        return {"changed": changed, "fix_count": fix_count}
+
+    def _llm_fix_pr(
+        self,
+        pr_number: int,
+        gh: GitHubClient,
+    ) -> dict[str, Any]:
+        """Use LLM to fix code issues based on the latest review."""
+        # Find the latest review comment from the bot
+        comments = gh.get_issue_comments(pr_number)
+        review_body = ""
+        for comment in reversed(comments):
+            body = comment.get("body", "")
+            if "🤖 自动化 PR 审查报告" in body:
+                review_body = body
+                break
+
+        if not review_body:
+            return {"applied": False, "reason": "no_review_comment"}
+
+        # Only fix if review had REQUEST_CHANGES
+        if "请修复后重新提交" not in review_body and "REQUEST_CHANGES" not in review_body:
+            return {"applied": False, "reason": "no_changes_requested"}
+
+        # Get changed files content
+        changed_files = gh.get_pr_files(pr_number)
+        file_contents: dict[str, str] = {}
+        for f in changed_files:
+            fpath = f["filename"]
+            # Only fix Python source files (not tests initially)
+            if not fpath.endswith(".py"):
+                continue
+            try:
+                with open(fpath, encoding="utf-8") as fh:
+                    file_contents[fpath] = fh.read()
+            except FileNotFoundError:
+                logger.debug("File not found locally: %s", fpath)
+
+        if not file_contents:
+            return {"applied": False, "reason": "no_python_files"}
+
+        # Ask LLM to fix
+        fix_result = self._generator.fix_code(review_body, file_contents)
+        fixed_files = fix_result.get("files", [])
+        if not fixed_files:
+            return {"applied": False, "reason": "llm_no_fixes"}
+
+        # Write fixed files
+        written: list[str] = []
+        for finfo in fixed_files:
+            fpath = finfo.get("path", "")
+            content = finfo.get("content", "")
+            if not fpath or not content:
+                continue
+            try:
+                with open(fpath, "w", encoding="utf-8") as fh:
+                    fh.write(content)
+                written.append(fpath)
+                logger.info("Fixed file: %s", fpath)
+            except Exception as e:
+                logger.warning("Failed to write fix for %s: %s", fpath, e)
+
+        return {
+            "applied": len(written) > 0,
+            "files_fixed": written,
+            "summary": fix_result.get("summary", ""),
+        }
 
     @staticmethod
     def _refresh_api_endpoints(model_name: str) -> None:

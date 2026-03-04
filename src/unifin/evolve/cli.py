@@ -121,6 +121,52 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     print(plan.summary())
 
 
+def cmd_fix_pr(args: argparse.Namespace) -> None:
+    """Auto-fix issues found in a PR review."""
+    from unifin.evolve.orchestrator import orchestrator
+
+    logger.info("Attempting auto-fix for PR #%d ...", args.pr_number)
+    result = orchestrator.fix_pr(args.pr_number)
+    print(
+        json.dumps(
+            {
+                "pr_number": result.get("pr_number"),
+                "branch": result.get("branch"),
+                "skipped": result.get("skipped", False),
+                "pushed": result.get("pushed", False),
+                "fixes": result.get("fixes", []),
+                "lint_fix": result.get("lint_fix", {}),
+                "llm_fix_applied": result.get("llm_fix", {}).get("applied", False),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+def cmd_scan_pending(args: argparse.Namespace) -> None:
+    """Scan for pending tasks (passive backup for missed events)."""
+    from unifin.evolve.orchestrator import orchestrator
+
+    logger.info("Scanning for pending issues and PRs...")
+    result = orchestrator.scan_pending_issues(dry_run=args.dry_run)
+    print(
+        json.dumps(
+            {
+                "dry_run": result.get("dry_run"),
+                "pending_analysis": result.get("pending_analysis", []),
+                "pending_approval_processing": result.get("pending_approval_processing", []),
+                "pending_reviews": result.get("pending_reviews", []),
+                "pending_fixes": result.get("pending_fixes", []),
+                "summary": result.get("summary", {}),
+                "actions_taken": result.get("actions_taken", []),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="unifin-evolve",
@@ -161,6 +207,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_review.add_argument("--pr-number", type=int, required=True)
     p_review.set_defaults(func=cmd_review_pr)
+
+    # fix-pr
+    p_fix = subparsers.add_parser(
+        "fix-pr",
+        help="Auto-fix issues found in a PR review",
+    )
+    p_fix.add_argument("--pr-number", type=int, required=True)
+    p_fix.set_defaults(func=cmd_fix_pr)
+
+    # scan-pending
+    p_scan = subparsers.add_parser(
+        "scan-pending",
+        help="Scan for pending tasks (passive backup for missed events)",
+    )
+    p_scan.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Only report what would be done, don't take action",
+    )
+    p_scan.set_defaults(func=cmd_scan_pending)
 
     # analyze (local debug)
     p_analyze = subparsers.add_parser(

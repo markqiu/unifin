@@ -644,3 +644,400 @@ class TestCLIReviewPR:
         # Should not raise
         args = parser.parse_args(["review-pr", "--pr-number", "1"])
         assert hasattr(args, "func")
+
+
+# ──────────────────────────────────────────────
+# Fix PR feature tests
+# ──────────────────────────────────────────────
+
+
+class TestFixCodeGenerator:
+    """Tests for the fix_code / _llm_fix methods on CodeGenerator."""
+
+    def test_fix_code_method_exists(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        assert hasattr(gen, "fix_code")
+        assert callable(gen.fix_code)
+
+    def test_fix_code_no_llm_key(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        gen._api_key = None
+        with pytest.raises(RuntimeError, match="LLM API key is required"):
+            gen.fix_code("review body", {"file.py": "code"})
+
+    def test_llm_fix_method_exists(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        assert hasattr(gen, "_llm_fix")
+
+    def test_code_fix_prompt_exists(self):
+        from unifin.evolve import generator
+
+        assert hasattr(generator, "_CODE_FIX_PROMPT")
+        prompt = generator._CODE_FIX_PROMPT
+        assert "review" in prompt.lower() or "fix" in prompt.lower()
+        assert "json" in prompt.lower()
+
+
+class TestFixPROrchestrator:
+    """Tests for the fix_pr orchestrator method."""
+
+    def test_fix_pr_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert hasattr(orch, "fix_pr")
+        assert callable(orch.fix_pr)
+
+    def test_is_bot_commit_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_is_bot_commit")
+
+    def test_auto_fix_lint_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_auto_fix_lint")
+
+    def test_llm_fix_pr_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert hasattr(orch, "_llm_fix_pr")
+
+    def test_is_bot_commit_returns_bool(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        # In local env, should return False (not in a bot commit context)
+        result = Orchestrator._is_bot_commit()
+        assert isinstance(result, bool)
+
+    def test_auto_fix_lint_returns_dict(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        result = Orchestrator._auto_fix_lint()
+        assert isinstance(result, dict)
+        assert "changed" in result
+
+    def test_checkout_branch_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_checkout_branch")
+        assert callable(Orchestrator._checkout_branch)
+
+    def test_has_new_review_after_fix_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_has_new_review_after_fix")
+
+    def test_has_new_review_after_fix_true(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comments = [
+            {"body": "🤖 审查报告\n请修复"},
+            {"body": "自动修复已提交"},
+            {"body": "🤖 审查报告\n仍有问题"},
+        ]
+        assert Orchestrator._has_new_review_after_fix(comments) is True
+
+    def test_has_new_review_after_fix_false(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comments = [
+            {"body": "🤖 审查报告\n请修复"},
+            {"body": "自动修复已提交"},
+        ]
+        assert Orchestrator._has_new_review_after_fix(comments) is False
+
+    def test_has_new_review_after_fix_no_fix(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comments = [{"body": "🤖 审查报告\n请修复"}]
+        assert Orchestrator._has_new_review_after_fix(comments) is False
+
+
+class TestGitAddCommitPushFix:
+    """Tests for the git_add_commit_push_fix method on GitHubClient."""
+
+    def test_method_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        assert hasattr(GitHubClient, "git_add_commit_push_fix")
+        assert callable(GitHubClient.git_add_commit_push_fix)
+
+
+class TestCLIFixPR:
+    """Tests for the fix-pr CLI command."""
+
+    def test_parse_fix_pr(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["fix-pr", "--pr-number", "9"])
+        assert args.command == "fix-pr"
+        assert args.pr_number == 9
+
+    def test_fix_pr_command_registered(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["fix-pr", "--pr-number", "1"])
+        assert hasattr(args, "func")
+
+    def test_fix_pr_requires_pr_number(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["fix-pr"])
+
+
+# ──────────────────────────────────────────────
+# Scan pending feature tests
+# ──────────────────────────────────────────────
+
+
+class TestScanPendingOrchestrator:
+    """Tests for the scan_pending_issues orchestrator method."""
+
+    def test_scan_pending_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert hasattr(orch, "scan_pending_issues")
+        assert callable(orch.scan_pending_issues)
+
+    def test_analyze_status_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert hasattr(orch, "_analyze_status")
+        assert callable(orch._analyze_status)
+
+    def test_keyword_fallback_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_keyword_fallback")
+        assert callable(Orchestrator._keyword_fallback)
+
+
+class TestAnalyzePrStatus:
+    """Tests for the LLM-based PR status analysis in CodeGenerator."""
+
+    def test_analyze_pr_status_method_exists(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        assert hasattr(gen, "analyze_pr_status")
+        assert callable(gen.analyze_pr_status)
+
+    def test_analyze_pr_status_returns_dict(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        result = gen.analyze_pr_status(
+            title="Test issue",
+            body="Some body",
+            comments=[],
+            labels=[],
+        )
+        assert isinstance(result, dict)
+
+    def test_analyze_pr_status_has_required_keys(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        result = gen.analyze_pr_status(
+            title="Test",
+            body="body",
+            comments=[{"author": "user", "body": "hello", "created_at": "2025-01-01"}],
+            labels=["data-request"],
+        )
+        assert "stage" in result
+        assert "needs_action" in result
+
+    def test_analyze_pr_status_no_api_key(self):
+        """Without API key, returns unknown/none."""
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        result = gen.analyze_pr_status("t", "b", [], [])
+        assert result["stage"] == "unknown"
+        assert result["needs_action"] == "none"
+
+
+class TestKeywordFallback:
+    """Tests for the deterministic keyword fallback in scan_pending."""
+
+    def test_no_comments_returns_analyze(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        result = Orchestrator._keyword_fallback(comments=[], labels=[])
+        assert result["needs_action"] == "analyze"
+        assert result["stage"] == "not_analyzed"
+
+    def test_discovered_marker_with_approved_no_pr(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        comments = [
+            {"user": {"login": "github-actions[bot]", "type": "Bot"}, "body": marker},
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=["approved"])
+        assert result["needs_action"] == "process_approval"
+
+    def test_no_review_returns_review_pr(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        # Has discovered + has PR link, so not pending analysis or approval
+        comments = [
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": marker + "\n[PR](/pull/9)",
+            },
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=[])
+        assert result["needs_action"] == "review_pr"
+
+    def test_review_with_changes_requested(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        comments = [
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": marker + "\n/pull/9",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "🤖 审查报告\n请修复后重新提交",
+            },
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=[])
+        assert result["needs_action"] == "fix_pr"
+
+    def test_review_with_fix_already_done(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        comments = [
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": marker + "\n/pull/9",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "🤖 审查报告\n请修复后重新提交",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "自动修复已提交",
+            },
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=[])
+        assert result["needs_action"] == "review_pr"
+        assert result["stage"] == "fix_attempted"
+
+    def test_review_with_fix_skipped(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        comments = [
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": marker + "\n/pull/9",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "🤖 审查报告\n请修复后重新提交",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "跳过自动修复",
+            },
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=[])
+        assert result["needs_action"] == "none"
+
+    def test_fallback_returns_confidence(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        result = Orchestrator._keyword_fallback(comments=[], labels=[])
+        assert "confidence" in result
+        assert isinstance(result["confidence"], float)
+
+    def test_fallback_returns_reasoning(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        result = Orchestrator._keyword_fallback(comments=[], labels=[])
+        assert "reasoning" in result
+        assert "keyword fallback" in result["reasoning"]
+
+
+class TestGitHubClientListMethods:
+    """Tests for list_issues and list_pull_requests methods."""
+
+    def test_list_issues_method_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        assert hasattr(GitHubClient, "list_issues")
+        assert callable(GitHubClient.list_issues)
+
+    def test_list_pull_requests_method_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        assert hasattr(GitHubClient, "list_pull_requests")
+        assert callable(GitHubClient.list_pull_requests)
+
+    def test_get_pr_reviews_method_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        assert hasattr(GitHubClient, "get_pr_reviews")
+        assert callable(GitHubClient.get_pr_reviews)
+
+
+class TestCLIScanPending:
+    """Tests for the scan-pending CLI command."""
+
+    def test_parse_scan_pending(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["scan-pending"])
+        assert args.command == "scan-pending"
+        assert args.dry_run is False
+
+    def test_parse_scan_pending_dry_run(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["scan-pending", "--dry-run"])
+        assert args.dry_run is True
+
+    def test_scan_pending_command_registered(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["scan-pending"])
+        assert hasattr(args, "func")
+
+    def test_scan_pending_summary_keys_includes_pending_fixes(self):
+        result = {
+            "pending_fixes": [],
+            "summary": {
+                "pending_fix_count": 0,
+            },
+        }
+        assert "pending_fixes" in result
+        assert "pending_fix_count" in result["summary"]

@@ -100,6 +100,100 @@ If there are minor style nits only, give COMMENT with suggestions.
 If there are bugs or convention violations, give REQUEST_CHANGES.
 """
 
+_CODE_FIX_PROMPT = """\
+You are a senior Python engineer fixing code for the unifin financial data platform.
+
+Project conventions:
+- All data models use Pydantic BaseModel with Query + Data classes
+- Date fields use `import datetime as dt` then `dt.date`
+  (NEVER `from datetime import date`)
+- All Data fields except primary key are `Optional[T] = None`
+- Fetchers inherit `unifin.core.fetcher.Fetcher` and implement TET
+  (transform_query, extract_data, transform_data)
+- Fetchers return `list[dict]`, never polars DataFrames
+- Symbols use ISO 10383 MIC format (e.g. `000001.XSHE`)
+- Errors use structured `UnifinError` hierarchy, never bare ValueError
+- Tests use pytest (not unittest.TestCase)
+- Ruff lint: line-length=100, rules E/F/I/N/W/UP
+
+You will receive:
+1. A code review with issues and suggestions
+2. The current content of files that need fixing
+
+For EACH file that needs changes, output a JSON object with this structure:
+```json
+{
+  "files": [
+    {
+      "path": "src/unifin/providers/akshare/fund_nav.py",
+      "content": "<full corrected file content>"
+    }
+  ],
+  "summary": "Brief description of fixes applied"
+}
+```
+
+RULES:
+- Output ONLY valid JSON, no explanation outside the JSON.
+- Include the COMPLETE file content, not just changed lines.
+- Fix ALL issues mentioned in the review.
+- Also fix any lint issues (line length, import order, etc).
+- Do NOT add new features — only fix the reported issues.
+- Preserve existing functionality that works correctly.
+"""
+
+_PR_STATUS_PROMPT = """\
+You are a DevOps assistant analyzing the state of a GitHub issue or pull request.
+
+You will be given:
+- The title and body of the issue/PR
+- All comments in chronological order (with author and timestamp)
+- The labels on the issue/PR
+
+Analyze ALL comments carefully and determine:
+1. The current stage of the workflow
+2. What action (if any) should be taken next
+
+Output ONLY valid JSON with this structure:
+{
+  "stage": "<see stage list below>",
+  "needs_action": "<one of: analyze, process_approval, review_pr, fix_pr, none>",
+  "confidence": <0.0 to 1.0>,
+  "reasoning": "<brief one-sentence explanation>"
+}
+
+Valid stages: not_analyzed, analyzed_pending_approval, approved_pending_pr,
+pr_created, reviewed_approved, reviewed_changes_requested, fix_attempted, unknown.
+
+Stage definitions:
+- not_analyzed: Issue opened but no analysis has been performed yet
+- analyzed_pending_approval: Bot posted analysis, waiting for user approval
+- approved_pending_pr: User approved but code has not been generated / PR not created
+- pr_created: PR was created, awaiting review
+- reviewed_approved: PR was reviewed and approved, ready to merge
+- reviewed_changes_requested: PR was reviewed and changes were requested, no fix yet
+- fix_attempted: A fix was already pushed after the review, needs re-review
+- unknown: Cannot determine
+
+Action rules:
+- not_analyzed → analyze
+- analyzed_pending_approval → none (wait for user)
+- approved_pending_pr → process_approval
+- pr_created (no review yet) → review_pr
+- reviewed_approved → none
+- reviewed_changes_requested (no fix yet) → fix_pr
+- fix_attempted (fix was pushed, needs re-review) → review_pr
+- If latest comment is "跳过自动修复" (skip fix), the action is → none (human needed)
+
+IMPORTANT:
+- Read the ACTUAL content of comments, not just their existence
+- Look for test results, lint results, code review verdicts
+- "请修复后重新提交" or "REQUEST_CHANGES" in a review means changes requested
+- "自动修复已提交" or "跳过自动修复" means fix was already attempted
+- "APPROVE" or "建议合并" in a review means approved
+- Consider the chronological ORDER — later comments override earlier state
+"""
+
 _COLUMN_MAPPING_PROMPT = """\
 You are mapping columns from a data source API to a unified data model.
 
@@ -179,6 +273,67 @@ class CodeGenerator:
                 "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
             )
         return self._llm_review(diff, file_summaries)
+
+    def analyze_pr_status(
+        self,
+        title: str,
+        body: str,
+        comments: list[dict[str, Any]],
+        labels: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Use LLM to analyze PR/issue comments and determine current status.
+
+        Parameters
+        ----------
+        title : str
+            Issue or PR title.
+        body : str
+            Issue or PR body.
+        comments : list[dict]
+            Comments with 'author', 'body', 'created_at' keys.
+        labels : list[str] | None
+            Labels on the issue/PR.
+
+        Returns
+        -------
+        dict with keys: stage, needs_action, confidence, reasoning.
+        Returns a fallback dict if LLM is not configured.
+        """
+        if not self._llm.has_api_key:
+            return {
+                "stage": "unknown",
+                "needs_action": "none",
+                "confidence": 0.0,
+                "reasoning": "LLM not configured",
+            }
+
+        return self._llm_analyze_pr_status(title, body, comments, labels or [])
+
+    def fix_code(
+        self,
+        review_body: str,
+        file_contents: dict[str, str],
+    ) -> dict[str, Any]:
+        """Use LLM to fix code based on review feedback.
+
+        Parameters
+        ----------
+        review_body : str
+            The review comment body (Markdown) with issues/suggestions.
+        file_contents : dict[str, str]
+            Mapping of file path → current file content.
+
+        Returns
+        -------
+        dict with keys: files (list of {path, content}), summary (str).
+        Raises RuntimeError if no LLM API key is configured.
+        """
+        if not self._llm.has_api_key:
+            raise RuntimeError(
+                "LLM API key is required for fix_code(). "
+                "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
+            )
+        return self._llm_fix(review_body, file_contents)
 
     def generate_plan(self, need: DataNeed, sources: list[SourceCandidate]) -> EvolvePlan:
         """Generate a complete EvolvePlan with all files to be created."""
@@ -317,6 +472,41 @@ class CodeGenerator:
 
         return unique
 
+    def _llm_analyze_pr_status(
+        self,
+        title: str,
+        body: str,
+        comments: list[dict[str, Any]],
+        labels: list[str],
+    ) -> dict[str, Any]:
+        """Use LLM to determine PR/issue status from comments."""
+        user_parts = [
+            f"### Title\n{title}",
+            f"### Body\n{(body or '(empty)')[:2000]}",
+            f"### Labels\n{', '.join(labels) if labels else '(none)'}",
+            "### Comments (chronological)",
+        ]
+        for c in comments:
+            author = c.get("author", c.get("user", {}).get("login", "unknown"))
+            date = c.get("created_at", "")
+            comment_body = c.get("body", "")[:1500]
+            if len(c.get("body", "")) > 1500:
+                comment_body += "\n... (truncated)"
+            user_parts.append(f"**{author}** ({date}):\n{comment_body}\n")
+
+        user_msg = "\n\n".join(user_parts)
+        try:
+            result = self._llm.chat(system=_PR_STATUS_PROMPT, user=user_msg)
+            return self._extract_json(result)
+        except Exception as e:
+            logger.warning("LLM PR status analysis failed: %s", e)
+            return {
+                "stage": "unknown",
+                "needs_action": "none",
+                "confidence": 0.0,
+                "reasoning": f"LLM error: {e}",
+            }
+
     def _llm_review(
         self,
         diff: str,
@@ -348,3 +538,21 @@ class CodeGenerator:
             "review_body": result,
             "verdict": verdict,
         }
+
+    def _llm_fix(
+        self,
+        review_body: str,
+        file_contents: dict[str, str],
+    ) -> dict[str, Any]:
+        """Use LLM to generate fixed file contents."""
+        user_parts = ["### Review feedback\n", review_body, "\n\n### Files to fix\n"]
+        for path, content in file_contents.items():
+            # Truncate very large files
+            truncated = content[:8000]
+            if len(content) > 8000:
+                truncated += "\n# ... (truncated)"
+            user_parts.append(f"#### `{path}`\n```python\n{truncated}\n```\n")
+
+        user_msg = "\n".join(user_parts)
+        result = self._llm.chat(system=_CODE_FIX_PROMPT, user=user_msg)
+        return self._extract_json(result)

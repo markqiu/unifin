@@ -114,7 +114,7 @@ API (FastAPI)  →  NL (LLM tools) →  SDK
 
 格式规范：
 - 日期字段使用 `import datetime as dt` 然后 `dt.date` / `dt.datetime`（**绝对不能** `from datetime import date`，Python 3.14 + Pydantic 会冲突）。
-- 所有 Data 模型的非必填字段 **必须** 为 `Optional[T] = None`。
+- 所有 Data 模型的非必填字段 **必须** 为 `T | None = None`（ruff UP045 要求使用 `X | None` 而非 `Optional[X]`）。
 - 含 `symbol` 字段的 Query **必须** 添加 `@field_validator("symbol")` 调用 `validate_symbol()`。
 - 含日期范围的 Query **必须** 添加 `@model_validator(mode="after")` 验证 `start_date <= end_date`。
 - 枚举参数 **必须** 使用 `Interval` / `Adjust` / `Period` / `Market` 枚举类型，**禁止** 裸字符串。

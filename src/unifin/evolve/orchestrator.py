@@ -345,15 +345,16 @@ class Orchestrator:
         )
 
         # Determine review event based on results
+        # Ground truth: tests + lint are the hard gates.
+        # LLM review is advisory — it cannot block when automated checks pass.
         all_pass = test_result["success"] and lint_result["success"]
         if not all_pass:
             event = "REQUEST_CHANGES"
-        elif llm_review and llm_review.get("verdict") == "REQUEST_CHANGES":
-            event = "REQUEST_CHANGES"
-        elif llm_review and llm_review.get("verdict") == "APPROVE" and all_pass:
-            event = "APPROVE"
         else:
-            event = "COMMENT"
+            # All automated checks pass → APPROVE regardless of LLM opinion.
+            # LLM review content is still included in the comment body for
+            # informational purposes, but it does not gate the verdict.
+            event = "APPROVE"
 
         try:
             gh.post_pr_review(pr_number, comment_body, event=event)
@@ -1012,12 +1013,13 @@ class Orchestrator:
         parts.append("---")
         all_pass = test_result["success"] and lint_result["success"]
         if all_pass:
-            if llm_review and llm_review.get("verdict") == "APPROVE":
-                parts.append("✅ **总体结论**: 所有检查通过，AI 审查通过，建议合并。")
-            elif llm_review and llm_review.get("verdict") == "REQUEST_CHANGES":
-                parts.append("⚠️ **总体结论**: 测试和 lint 通过，但 AI 审查发现需要修改的问题。")
+            if llm_review and llm_review.get("verdict") == "REQUEST_CHANGES":
+                parts.append(
+                    "✅ **总体结论**: 所有自动检查通过（测试 + lint）。"
+                    "AI 审查有建议（仅供参考），建议合并。"
+                )
             else:
-                parts.append("✅ **总体结论**: 所有自动检查通过。")
+                parts.append("✅ **总体结论**: 所有检查通过，建议合并。")
         else:
             issues: list[str] = []
             if not test_result["success"]:

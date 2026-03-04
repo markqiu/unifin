@@ -729,6 +729,36 @@ class TestFixPROrchestrator:
         assert hasattr(Orchestrator, "_checkout_branch")
         assert callable(Orchestrator._checkout_branch)
 
+    def test_has_new_review_after_fix_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_has_new_review_after_fix")
+
+    def test_has_new_review_after_fix_true(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comments = [
+            {"body": "🤖 审查报告\n请修复"},
+            {"body": "自动修复已提交"},
+            {"body": "🤖 审查报告\n仍有问题"},
+        ]
+        assert Orchestrator._has_new_review_after_fix(comments) is True
+
+    def test_has_new_review_after_fix_false(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comments = [
+            {"body": "🤖 审查报告\n请修复"},
+            {"body": "自动修复已提交"},
+        ]
+        assert Orchestrator._has_new_review_after_fix(comments) is False
+
+    def test_has_new_review_after_fix_no_fix(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        comments = [{"body": "🤖 审查报告\n请修复"}]
+        assert Orchestrator._has_new_review_after_fix(comments) is False
+
 
 class TestGitAddCommitPushFix:
     """Tests for the git_add_commit_push_fix method on GitHubClient."""

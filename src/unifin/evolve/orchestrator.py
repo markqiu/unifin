@@ -402,16 +402,26 @@ class Orchestrator:
         # Checkout the PR branch so fixes apply to the right codebase
         self._checkout_branch(head_branch)
 
-        # Loop guard: check if latest commit was from the bot
+        # Loop guard: skip if latest commit is from bot AND no new review after it
         if self._is_bot_commit():
-            logger.info("Latest commit is from unifin-bot, skipping fix to prevent infinite loop.")
-            result["skipped"] = True
-            result["reason"] = "bot_commit"
-            gh.post_pr_comment(
-                pr_number,
-                "⏭️ 跳过自动修复（最近的 commit 已由 bot 提交，避免无限循环）。请人工检查剩余问题。",
+            comments = gh.get_issue_comments(pr_number)
+            if not self._has_new_review_after_fix(comments):
+                logger.info(
+                    "Latest commit is from unifin-bot and no new review found, "
+                    "skipping fix to prevent infinite loop."
+                )
+                result["skipped"] = True
+                result["reason"] = "bot_commit"
+                gh.post_pr_comment(
+                    pr_number,
+                    "⏭️ 跳过自动修复（最近的 commit 已由 bot 提交，"
+                    "且无新审查，避免无限循环）。请人工检查剩余问题。",
+                )
+                return result
+            logger.info(
+                "Latest commit is from bot, but a new review was posted — "
+                "allowing another fix attempt."
             )
-            return result
 
         fixes_applied: list[str] = []
 
@@ -991,6 +1001,23 @@ class Orchestrator:
     # ===================================================================
     # Internal helpers
     # ===================================================================
+
+    @staticmethod
+    def _has_new_review_after_fix(comments: list[dict[str, Any]]) -> bool:
+        """Check if a review comment exists after the last fix comment.
+
+        Returns True if there is a review (审查报告) comment that appears
+        chronologically after the last fix (修复已提交/跳过自动修复) comment.
+        """
+        last_fix_idx = -1
+        last_review_idx = -1
+        for i, c in enumerate(comments):
+            body = c.get("body", "")
+            if "修复已提交" in body or "跳过自动修复" in body:
+                last_fix_idx = i
+            if "审查报告" in body:
+                last_review_idx = i
+        return last_review_idx > last_fix_idx and last_fix_idx >= 0
 
     @staticmethod
     def _is_bot_commit() -> bool:

@@ -586,27 +586,63 @@ class Orchestrator:
                         logger.warning("Failed to review PR #%d: %s", pr_number, e)
                 continue
 
-            # Already reviewed: check if latest review requests changes
+            # Already reviewed: check if changes were requested
+            # Two possible sources for "changes requested":
+            #   a) PR Review API state (when post_pr_review succeeded)
+            #   b) Comment text (when post_pr_review failed and fell back to
+            #      post_pr_comment — GitHub does NOT record review state in
+            #      this case)
+            needs_fix = False
+
+            # (a) Check PR Review API
             try:
                 reviews = gh.get_pr_reviews(pr_number)
                 if reviews:
                     latest_state = reviews[-1].get("state", "")
                     if latest_state == "CHANGES_REQUESTED":
-                        result["pending_fixes"].append(pr_number)
-                        if not dry_run:
-                            try:
-                                fix_result = self.fix_pr(pr_number, gh=gh)
-                                result["actions_taken"].append(
-                                    {
-                                        "pr": pr_number,
-                                        "action": "fixed",
-                                        "pushed": fix_result.get("pushed", False),
-                                    }
-                                )
-                            except Exception as e:
-                                logger.warning("Failed to auto-fix PR #%d: %s", pr_number, e)
+                        needs_fix = True
             except Exception as e:
-                logger.warning("Failed to inspect PR reviews for #%d: %s", pr_number, e)
+                logger.debug("Could not fetch PR reviews for #%d: %s", pr_number, e)
+
+            # (b) Check comment body for the review verdict marker
+            if not needs_fix:
+                # Find the latest review comment
+                for c in reversed(comments):
+                    body = c.get("body", "")
+                    if "🤖 自动化 PR 审查报告" in body:
+                        if "请修复后重新提交" in body or "AI 审查发现需要修改" in body:
+                            needs_fix = True
+                        break  # only check the latest review comment
+
+            if needs_fix:
+                # Check if a fix was already attempted after the review
+                review_idx = None
+                for i, c in enumerate(comments):
+                    if "🤖 自动化 PR 审查报告" in c.get("body", ""):
+                        review_idx = i
+                fix_already_attempted = False
+                if review_idx is not None:
+                    # Look for fix comment after the review comment
+                    for c in comments[review_idx + 1 :]:
+                        body = c.get("body", "")
+                        if "自动修复已提交" in body or "跳过自动修复" in body:
+                            fix_already_attempted = True
+                            break
+
+                if not fix_already_attempted:
+                    result["pending_fixes"].append(pr_number)
+                    if not dry_run:
+                        try:
+                            fix_result = self.fix_pr(pr_number, gh=gh)
+                            result["actions_taken"].append(
+                                {
+                                    "pr": pr_number,
+                                    "action": "fixed",
+                                    "pushed": fix_result.get("pushed", False),
+                                }
+                            )
+                        except Exception as e:
+                            logger.warning("Failed to auto-fix PR #%d: %s", pr_number, e)
 
         # Summary
         result["summary"] = {

@@ -399,6 +399,9 @@ class Orchestrator:
             "branch": head_branch,
         }
 
+        # Checkout the PR branch so fixes apply to the right codebase
+        self._checkout_branch(head_branch)
+
         # Loop guard: check if latest commit was from the bot
         if self._is_bot_commit():
             logger.info("Latest commit is from unifin-bot, skipping fix to prevent infinite loop.")
@@ -457,6 +460,28 @@ class Orchestrator:
             )
 
         return result
+
+    @staticmethod
+    def _checkout_branch(branch: str) -> None:
+        """Fetch and checkout a remote branch locally."""
+        subprocess.run(
+            ["git", "fetch", "origin", branch],
+            check=True,
+            capture_output=True,
+        )
+        # Try checkout; if the local branch doesn't exist, create it
+        result = subprocess.run(
+            ["git", "checkout", branch],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            subprocess.run(
+                ["git", "checkout", "-b", branch, f"origin/{branch}"],
+                check=True,
+                capture_output=True,
+            )
+        logger.info("Checked out branch %s", branch)
 
     # ===================================================================
     # Passive scanning (backup for missed events)

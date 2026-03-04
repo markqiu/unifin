@@ -723,6 +723,12 @@ class TestFixPROrchestrator:
         assert isinstance(result, dict)
         assert "changed" in result
 
+    def test_checkout_branch_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_checkout_branch")
+        assert callable(Orchestrator._checkout_branch)
+
 
 class TestGitAddCommitPushFix:
     """Tests for the git_add_commit_push_fix method on GitHubClient."""

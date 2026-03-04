@@ -303,6 +303,31 @@ class GitHubClient:
                     capture_output=True,
                 )
 
+        # Ensure we are on the correct branch
+        current = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        if current.returncode == 0 and current.stdout.strip() != branch_name:
+            # Fetch and checkout the target branch
+            subprocess.run(
+                ["git", "fetch", "origin", branch_name],
+                check=False,
+                capture_output=True,
+            )
+            result_co = subprocess.run(
+                ["git", "checkout", branch_name],
+                capture_output=True,
+                text=True,
+            )
+            if result_co.returncode != 0:
+                subprocess.run(
+                    ["git", "checkout", "-b", branch_name, f"origin/{branch_name}"],
+                    check=True,
+                    capture_output=True,
+                )
+
         subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
 
         # Check if there are staged changes

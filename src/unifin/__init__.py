@@ -65,17 +65,17 @@ from unifin.models import (
 # We catch ImportError so missing optional deps don't break the package.
 
 try:
+    from unifin.providers import yfinance as _p_yf  # noqa: F401
+except ImportError:
+    pass
+
+try:
     from unifin.providers import akshare as _p_ak  # noqa: F401
 except ImportError:
     pass
 
 try:
     from unifin.providers import eastmoney as _p_em  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    from unifin.providers import yfinance as _p_yf  # noqa: F401
 except ImportError:
     pass
 

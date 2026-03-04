@@ -615,7 +615,7 @@ class Orchestrator:
                         action,
                     )
                     action = "fix_pr"
-            elif last_action == "fix" and stage in (
+            elif last_action in ("fix", "skip") and stage in (
                 "fix_attempted",
                 "reviewed_changes_requested",
             ):

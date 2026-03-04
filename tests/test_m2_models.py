@@ -308,8 +308,8 @@ class TestEndToEndYFinance:
         assert "sector" in df.columns
         row = df.to_dicts()[0]
         assert row["symbol"] == "AAPL"
-        sector = row.get('sector')
-        mktcap = row.get('market_cap')
+        sector = row.get("sector")
+        mktcap = row.get("market_cap")
         print(f"\n  equity.profile('AAPL'): sector={sector}, mktcap={mktcap}")
 
     def test_equity_quote(self):

@@ -370,9 +370,7 @@ class TestOrchestrator:
         from unifin.evolve.generator import CodeGenerator
 
         mock = TestOrchestrator._mock_analyze_need
-        monkeypatch.setattr(
-            CodeGenerator, "analyze_need", lambda self, req: mock(req)
-        )
+        monkeypatch.setattr(CodeGenerator, "analyze_need", lambda self, req: mock(req))
         monkeypatch.setattr(
             CodeGenerator,
             "generate_column_mapping",
@@ -645,3 +643,118 @@ class TestCLIReviewPR:
         # Should not raise
         args = parser.parse_args(["review-pr", "--pr-number", "1"])
         assert hasattr(args, "func")
+
+
+# ──────────────────────────────────────────────
+# Fix PR feature tests
+# ──────────────────────────────────────────────
+
+
+class TestFixCodeGenerator:
+    """Tests for the fix_code / _llm_fix methods on CodeGenerator."""
+
+    def test_fix_code_method_exists(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        assert hasattr(gen, "fix_code")
+        assert callable(gen.fix_code)
+
+    def test_fix_code_no_llm_key(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        gen._api_key = None
+        with pytest.raises(RuntimeError, match="LLM API key is required"):
+            gen.fix_code("review body", {"file.py": "code"})
+
+    def test_llm_fix_method_exists(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        assert hasattr(gen, "_llm_fix")
+
+    def test_code_fix_prompt_exists(self):
+        from unifin.evolve import generator
+
+        assert hasattr(generator, "_CODE_FIX_PROMPT")
+        prompt = generator._CODE_FIX_PROMPT
+        assert "review" in prompt.lower() or "fix" in prompt.lower()
+        assert "json" in prompt.lower()
+
+
+class TestFixPROrchestrator:
+    """Tests for the fix_pr orchestrator method."""
+
+    def test_fix_pr_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert hasattr(orch, "fix_pr")
+        assert callable(orch.fix_pr)
+
+    def test_is_bot_commit_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_is_bot_commit")
+
+    def test_auto_fix_lint_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_auto_fix_lint")
+
+    def test_llm_fix_pr_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert hasattr(orch, "_llm_fix_pr")
+
+    def test_is_bot_commit_returns_bool(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        # In local env, should return False (not in a bot commit context)
+        result = Orchestrator._is_bot_commit()
+        assert isinstance(result, bool)
+
+    def test_auto_fix_lint_returns_dict(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        result = Orchestrator._auto_fix_lint()
+        assert isinstance(result, dict)
+        assert "changed" in result
+
+
+class TestGitAddCommitPushFix:
+    """Tests for the git_add_commit_push_fix method on GitHubClient."""
+
+    def test_method_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        assert hasattr(GitHubClient, "git_add_commit_push_fix")
+        assert callable(GitHubClient.git_add_commit_push_fix)
+
+
+class TestCLIFixPR:
+    """Tests for the fix-pr CLI command."""
+
+    def test_parse_fix_pr(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["fix-pr", "--pr-number", "9"])
+        assert args.command == "fix-pr"
+        assert args.pr_number == 9
+
+    def test_fix_pr_command_registered(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["fix-pr", "--pr-number", "1"])
+        assert hasattr(args, "func")
+
+    def test_fix_pr_requires_pr_number(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["fix-pr"])

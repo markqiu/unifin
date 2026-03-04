@@ -338,10 +338,7 @@ def generate_test_code(need: DataNeed, sources: list[SourceCandidate]) -> str:
         lines.append(f'    """Tests for {source.provider} fetcher of {need.model_name}."""')
         lines.append("")
         lines.append("    def test_fetcher_registered(self):")
-        get_f = (
-            f'provider_registry.get_fetcher("{need.model_name}"'
-            f', "{source.provider}")'
-        )
+        get_f = f'provider_registry.get_fetcher("{need.model_name}", "{source.provider}")'
         lines.append(f"        fetcher = {get_f}")
         lines.append("        assert fetcher is not None")
         lines.append(f'        assert fetcher.model_name == "{need.model_name}"')

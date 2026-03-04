@@ -100,6 +100,48 @@ If there are minor style nits only, give COMMENT with suggestions.
 If there are bugs or convention violations, give REQUEST_CHANGES.
 """
 
+_CODE_FIX_PROMPT = """\
+You are a senior Python engineer fixing code for the unifin financial data platform.
+
+Project conventions:
+- All data models use Pydantic BaseModel with Query + Data classes
+- Date fields use `import datetime as dt` then `dt.date`
+  (NEVER `from datetime import date`)
+- All Data fields except primary key are `Optional[T] = None`
+- Fetchers inherit `unifin.core.fetcher.Fetcher` and implement TET
+  (transform_query, extract_data, transform_data)
+- Fetchers return `list[dict]`, never polars DataFrames
+- Symbols use ISO 10383 MIC format (e.g. `000001.XSHE`)
+- Errors use structured `UnifinError` hierarchy, never bare ValueError
+- Tests use pytest (not unittest.TestCase)
+- Ruff lint: line-length=100, rules E/F/I/N/W/UP
+
+You will receive:
+1. A code review with issues and suggestions
+2. The current content of files that need fixing
+
+For EACH file that needs changes, output a JSON object with this structure:
+```json
+{
+  "files": [
+    {
+      "path": "src/unifin/providers/akshare/fund_nav.py",
+      "content": "<full corrected file content>"
+    }
+  ],
+  "summary": "Brief description of fixes applied"
+}
+```
+
+RULES:
+- Output ONLY valid JSON, no explanation outside the JSON.
+- Include the COMPLETE file content, not just changed lines.
+- Fix ALL issues mentioned in the review.
+- Also fix any lint issues (line length, import order, etc).
+- Do NOT add new features — only fix the reported issues.
+- Preserve existing functionality that works correctly.
+"""
+
 _COLUMN_MAPPING_PROMPT = """\
 You are mapping columns from a data source API to a unified data model.
 
@@ -179,6 +221,32 @@ class CodeGenerator:
                 "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
             )
         return self._llm_review(diff, file_summaries)
+
+    def fix_code(
+        self,
+        review_body: str,
+        file_contents: dict[str, str],
+    ) -> dict[str, Any]:
+        """Use LLM to fix code based on review feedback.
+
+        Parameters
+        ----------
+        review_body : str
+            The review comment body (Markdown) with issues/suggestions.
+        file_contents : dict[str, str]
+            Mapping of file path → current file content.
+
+        Returns
+        -------
+        dict with keys: files (list of {path, content}), summary (str).
+        Raises RuntimeError if no LLM API key is configured.
+        """
+        if not self._llm.has_api_key:
+            raise RuntimeError(
+                "LLM API key is required for fix_code(). "
+                "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
+            )
+        return self._llm_fix(review_body, file_contents)
 
     def generate_plan(self, need: DataNeed, sources: list[SourceCandidate]) -> EvolvePlan:
         """Generate a complete EvolvePlan with all files to be created."""
@@ -348,3 +416,21 @@ class CodeGenerator:
             "review_body": result,
             "verdict": verdict,
         }
+
+    def _llm_fix(
+        self,
+        review_body: str,
+        file_contents: dict[str, str],
+    ) -> dict[str, Any]:
+        """Use LLM to generate fixed file contents."""
+        user_parts = ["### Review feedback\n", review_body, "\n\n### Files to fix\n"]
+        for path, content in file_contents.items():
+            # Truncate very large files
+            truncated = content[:8000]
+            if len(content) > 8000:
+                truncated += "\n# ... (truncated)"
+            user_parts.append(f"#### `{path}`\n```python\n{truncated}\n```\n")
+
+        user_msg = "\n".join(user_parts)
+        result = self._llm.chat(system=_CODE_FIX_PROMPT, user=user_msg)
+        return self._extract_json(result)

@@ -143,6 +143,7 @@ jobs:
         run: uv sync --extra dev --extra all
 
       - name: Review PR (tests + lint + LLM review)
+        id: review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -153,4 +154,30 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           uv run unifin-evolve review-pr \
+            --pr-number ${{ github.event.pull_request.number }}
+
+      - name: Check if auto-fix should run
+        id: fix_guard
+        run: |
+          LAST_AUTHOR=$(git log -1 --format='%an')
+          echo "last_author=$LAST_AUTHOR" >> $GITHUB_OUTPUT
+          if [ "$LAST_AUTHOR" = "unifin-bot" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Skipping auto-fix: last commit is from unifin-bot"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Auto-fix PR issues
+        if: steps.fix_guard.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          UNIFIN_LLM_PROVIDER: ${{ vars.UNIFIN_LLM_PROVIDER }}
+          UNIFIN_LLM_API_KEY: ${{ secrets.UNIFIN_LLM_API_KEY }}
+          UNIFIN_LLM_BASE_URL: ${{ vars.UNIFIN_LLM_BASE_URL }}
+          UNIFIN_LLM_MODEL: ${{ vars.UNIFIN_LLM_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          uv run unifin-evolve fix-pr \
             --pr-number ${{ github.event.pull_request.number }}

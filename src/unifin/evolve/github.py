@@ -127,12 +127,8 @@ class GitHubClient:
         )
 
         if resp.status_code == 403:
-            logger.warning(
-                "REST API returned 403 for PR creation, trying gh CLI fallback"
-            )
-            return self._create_pr_via_cli(
-                title=title, body=body, head=head, base=base
-            )
+            logger.warning("REST API returned 403 for PR creation, trying gh CLI fallback")
+            return self._create_pr_via_cli(title=title, body=body, head=head, base=base)
 
         resp.raise_for_status()
         pr = resp.json()
@@ -150,11 +146,17 @@ class GitHubClient:
         """Create a PR using the ``gh`` CLI (requires GITHUB_TOKEN env var)."""
         result = subprocess.run(
             [
-                "gh", "pr", "create",
-                "--title", title,
-                "--body", body,
-                "--head", head,
-                "--base", base,
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                title,
+                "--body",
+                body,
+                "--head",
+                head,
+                "--base",
+                base,
             ],
             capture_output=True,
             text=True,
@@ -200,7 +202,10 @@ class GitHubClient:
                 # Set authenticated remote URL directly
                 subprocess.run(
                     [
-                        "git", "remote", "set-url", "origin",
+                        "git",
+                        "remote",
+                        "set-url",
+                        "origin",
                         f"https://x-access-token:{token}@github.com/{repo}.git",
                     ],
                     check=False,
@@ -231,6 +236,72 @@ class GitHubClient:
             raise subprocess.CalledProcessError(
                 result.returncode, result.args, result.stdout, result.stderr
             )
+
+    @staticmethod
+    def git_add_commit_push_fix(branch_name: str, message: str) -> None:
+        """Stage all changes, commit, and push fixes to an existing PR branch.
+
+        Unlike ``git_add_commit_push``, this does NOT delete the remote branch
+        first — it simply pushes additional commits onto the existing branch.
+        """
+        # Ensure git user is configured
+        subprocess.run(
+            ["git", "config", "user.name", "unifin-bot"],
+            check=False,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "unifin-bot@users.noreply.github.com"],
+            check=False,
+            capture_output=True,
+        )
+
+        # Configure auth for push
+        token = os.environ.get("GITHUB_TOKEN", "")
+        if token:
+            repo = os.environ.get("GITHUB_REPOSITORY", "")
+            if repo:
+                subprocess.run(
+                    [
+                        "git",
+                        "remote",
+                        "set-url",
+                        "origin",
+                        f"https://x-access-token:{token}@github.com/{repo}.git",
+                    ],
+                    check=False,
+                    capture_output=True,
+                )
+
+        subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
+
+        # Check if there are staged changes
+        diff_result = subprocess.run(
+            ["git", "diff", "--cached", "--stat"],
+            capture_output=True,
+            text=True,
+        )
+        if not diff_result.stdout.strip():
+            logger.info("No staged changes to commit for fix.")
+            return
+
+        subprocess.run(
+            ["git", "commit", "-m", message],
+            check=True,
+            capture_output=True,
+        )
+
+        result = subprocess.run(
+            ["git", "push", "origin", branch_name],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            logger.error("git push fix failed: %s", result.stderr.strip())
+            raise subprocess.CalledProcessError(
+                result.returncode, result.args, result.stdout, result.stderr
+            )
+        logger.info("Pushed fix commit to %s", branch_name)
 
     # ── Pull Request read ──
 

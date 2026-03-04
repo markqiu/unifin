@@ -302,6 +302,9 @@ class Orchestrator:
         head_branch = pr["head"]["ref"]
         logger.info("Reviewing PR #%d (%s)", pr_number, head_branch)
 
+        # Checkout PR branch so tests and lint run against PR code
+        self._checkout_branch(head_branch)
+
         result: dict[str, Any] = {"pr_number": pr_number, "branch": head_branch}
 
         # 1. Run test suite

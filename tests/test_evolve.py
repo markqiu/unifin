@@ -597,7 +597,7 @@ class TestReviewComment:
             llm_review=None,
         )
         assert "AI 代码审查" not in comment
-        assert "所有自动检查通过" in comment
+        assert "所有检查通过" in comment
 
     def test_build_review_comment_request_changes(self):
         from unifin.evolve.orchestrator import Orchestrator
@@ -611,7 +611,8 @@ class TestReviewComment:
                 "verdict": "REQUEST_CHANGES",
             },
         )
-        assert "AI 审查发现需要修改" in comment
+        assert "AI 审查有建议" in comment
+        assert "建议合并" in comment
 
 
 class TestOrchestratorReviewPR:

@@ -142,6 +142,48 @@ RULES:
 - Preserve existing functionality that works correctly.
 """
 
+_PR_STATUS_PROMPT = """\
+You are a DevOps assistant analyzing the state of a GitHub issue or pull request.
+
+You will be given:
+- The title and body of the issue/PR
+- All comments in chronological order (with author and timestamp)
+- The labels on the issue/PR
+
+Analyze ALL comments carefully and determine:
+1. The current stage of the workflow
+2. What action (if any) should be taken next
+
+Output ONLY valid JSON with this structure:
+{
+  "stage": "<see stage list below>",
+  "needs_action": "<one of: analyze, process_approval, review_pr, fix_pr, none>",
+  "confidence": <0.0 to 1.0>,
+  "reasoning": "<brief one-sentence explanation>"
+}
+
+Valid stages: not_analyzed, analyzed_pending_approval, approved_pending_pr,
+pr_created, reviewed_approved, reviewed_changes_requested, fix_attempted, unknown.
+
+Stage definitions:
+- not_analyzed: Issue opened but no analysis has been performed yet
+- analyzed_pending_approval: Bot posted analysis, waiting for user approval
+- approved_pending_pr: User approved but code has not been generated / PR not created
+- pr_created: PR was created, awaiting review
+- reviewed_approved: PR was reviewed and approved, ready to merge
+- reviewed_changes_requested: PR was reviewed and changes were requested, no fix yet
+- fix_attempted: A fix was already pushed after the review
+- unknown: Cannot determine
+
+IMPORTANT:
+- Read the ACTUAL content of comments, not just their existence
+- Look for test results, lint results, code review verdicts
+- "请修复后重新提交" or "REQUEST_CHANGES" in a review means changes requested
+- "自动修复已提交" or "跳过自动修复" means fix was already attempted
+- "APPROVE" or "建议合并" in a review means approved
+- Consider the chronological ORDER — later comments override earlier state
+"""
+
 _COLUMN_MAPPING_PROMPT = """\
 You are mapping columns from a data source API to a unified data model.
 
@@ -221,6 +263,41 @@ class CodeGenerator:
                 "Set UNIFIN_LLM_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
             )
         return self._llm_review(diff, file_summaries)
+
+    def analyze_pr_status(
+        self,
+        title: str,
+        body: str,
+        comments: list[dict[str, Any]],
+        labels: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Use LLM to analyze PR/issue comments and determine current status.
+
+        Parameters
+        ----------
+        title : str
+            Issue or PR title.
+        body : str
+            Issue or PR body.
+        comments : list[dict]
+            Comments with 'author', 'body', 'created_at' keys.
+        labels : list[str] | None
+            Labels on the issue/PR.
+
+        Returns
+        -------
+        dict with keys: stage, needs_action, confidence, reasoning.
+        Returns a fallback dict if LLM is not configured.
+        """
+        if not self._llm.has_api_key:
+            return {
+                "stage": "unknown",
+                "needs_action": "none",
+                "confidence": 0.0,
+                "reasoning": "LLM not configured",
+            }
+
+        return self._llm_analyze_pr_status(title, body, comments, labels or [])
 
     def fix_code(
         self,
@@ -384,6 +461,41 @@ class CodeGenerator:
                 unique.append(kw)
 
         return unique
+
+    def _llm_analyze_pr_status(
+        self,
+        title: str,
+        body: str,
+        comments: list[dict[str, Any]],
+        labels: list[str],
+    ) -> dict[str, Any]:
+        """Use LLM to determine PR/issue status from comments."""
+        user_parts = [
+            f"### Title\n{title}",
+            f"### Body\n{(body or '(empty)')[:2000]}",
+            f"### Labels\n{', '.join(labels) if labels else '(none)'}",
+            "### Comments (chronological)",
+        ]
+        for c in comments:
+            author = c.get("author", c.get("user", {}).get("login", "unknown"))
+            date = c.get("created_at", "")
+            comment_body = c.get("body", "")[:1500]
+            if len(c.get("body", "")) > 1500:
+                comment_body += "\n... (truncated)"
+            user_parts.append(f"**{author}** ({date}):\n{comment_body}\n")
+
+        user_msg = "\n\n".join(user_parts)
+        try:
+            result = self._llm.chat(system=_PR_STATUS_PROMPT, user=user_msg)
+            return self._extract_json(result)
+        except Exception as e:
+            logger.warning("LLM PR status analysis failed: %s", e)
+            return {
+                "stage": "unknown",
+                "needs_action": "none",
+                "confidence": 0.0,
+                "reasoning": f"LLM error: {e}",
+            }
 
     def _llm_review(
         self,

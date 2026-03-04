@@ -470,17 +470,9 @@ class Orchestrator:
     ) -> dict[str, Any]:
         """Scan all data-request issues and PRs for pending tasks.
 
-        This is a passive scanning mechanism to complement event-driven triggers.
-        It handles cases where:
-        - System was offline when events occurred
-        - Webhook delivery failed
-        - Previous processing failed
-
-        Scans for:
-        1. Issues with `data-request` but without `approved` label that haven't
-           been analyzed yet (no bot comment with DISCOVERED stage marker)
-        2. Issues with `approved` label that don't have a PR yet
-        3. Open PRs from evolve/* branches that haven't been reviewed
+        Uses LLM to read all comments and determine the current status and
+        needed action for each issue/PR.  Falls back to basic heuristics when
+        LLM is not configured.
 
         Parameters
         ----------
@@ -502,38 +494,32 @@ class Orchestrator:
             "actions_taken": [],
         }
 
-        # 1. Find data-request issues
+        # 1. Scan data-request issues
         issues = gh.list_issues(state="open", labels="data-request")
         logger.info("Found %d open data-request issues", len(issues))
 
         for issue in issues:
             issue_number = issue["number"]
             labels = [lb["name"] for lb in issue.get("labels", [])]
-            has_approved = "approved" in labels
-
-            # Find bot comments to detect current stage
             comments = gh.get_issue_comments(issue_number)
-            bot_comments = [
-                c
-                for c in comments
-                if c.get("user", {}).get("login") == "github-actions[bot]"
-                or c.get("user", {}).get("type") == "Bot"
-            ]
 
-            # Check if already analyzed (has DISCOVERED marker)
-            has_discovered = any(
-                _stage_marker(Stage.DISCOVERED) in c.get("body", "") for c in bot_comments
+            status = self._analyze_status(
+                title=issue.get("title", ""),
+                body=issue.get("body", ""),
+                comments=comments,
+                labels=labels,
+            )
+            action = status.get("needs_action", "none")
+            logger.info(
+                "Issue #%d: stage=%s, action=%s (confidence=%.2f, reason=%s)",
+                issue_number,
+                status.get("stage"),
+                action,
+                status.get("confidence", 0),
+                status.get("reasoning", ""),
             )
 
-            # Check if PR exists (look for PR link in comments)
-            has_pr = any(
-                "pull" in c.get("body", "").lower() and "/pull/" in c.get("body", "")
-                for c in bot_comments
-            )
-
-            # Determine pending state
-            if not has_discovered:
-                # Issue not yet analyzed
+            if action == "analyze":
                 result["pending_analysis"].append(issue_number)
                 if not dry_run:
                     try:
@@ -544,8 +530,7 @@ class Orchestrator:
                     except Exception as e:
                         logger.warning("Failed to analyze issue #%d: %s", issue_number, e)
 
-            elif has_approved and not has_pr:
-                # Approved but no PR yet
+            elif action == "process_approval":
                 result["pending_approval_processing"].append(issue_number)
                 if not dry_run:
                     try:
@@ -560,89 +545,53 @@ class Orchestrator:
                     except Exception as e:
                         logger.warning("Failed to process approval #%d: %s", issue_number, e)
 
-        # 2. Find open PRs from evolve/* branches
+        # 2. Scan open PRs from evolve/* branches
         prs = gh.list_pull_requests(state="open")
         evolve_prs = [pr for pr in prs if pr.get("head", {}).get("ref", "").startswith("evolve/")]
 
         for pr in evolve_prs:
             pr_number = pr["number"]
-
-            # Check if already reviewed (has review comment from bot)
             comments = gh.get_issue_comments(pr_number)
-            has_review = any("🤖 自动化 PR 审查报告" in c.get("body", "") for c in comments)
 
-            if not has_review:
+            status = self._analyze_status(
+                title=pr.get("title", ""),
+                body=pr.get("body", ""),
+                comments=comments,
+                labels=[lb["name"] for lb in pr.get("labels", [])],
+            )
+            action = status.get("needs_action", "none")
+            logger.info(
+                "PR #%d: stage=%s, action=%s (confidence=%.2f, reason=%s)",
+                pr_number,
+                status.get("stage"),
+                action,
+                status.get("confidence", 0),
+                status.get("reasoning", ""),
+            )
+
+            if action == "review_pr":
                 result["pending_reviews"].append(pr_number)
                 if not dry_run:
                     try:
                         self.review_pr(pr_number)
+                        result["actions_taken"].append({"pr": pr_number, "action": "reviewed"})
+                    except Exception as e:
+                        logger.warning("Failed to review PR #%d: %s", pr_number, e)
+
+            elif action == "fix_pr":
+                result["pending_fixes"].append(pr_number)
+                if not dry_run:
+                    try:
+                        fix_result = self.fix_pr(pr_number, gh=gh)
                         result["actions_taken"].append(
                             {
                                 "pr": pr_number,
-                                "action": "reviewed",
+                                "action": "fixed",
+                                "pushed": fix_result.get("pushed", False),
                             }
                         )
                     except Exception as e:
-                        logger.warning("Failed to review PR #%d: %s", pr_number, e)
-                continue
-
-            # Already reviewed: check if changes were requested
-            # Two possible sources for "changes requested":
-            #   a) PR Review API state (when post_pr_review succeeded)
-            #   b) Comment text (when post_pr_review failed and fell back to
-            #      post_pr_comment — GitHub does NOT record review state in
-            #      this case)
-            needs_fix = False
-
-            # (a) Check PR Review API
-            try:
-                reviews = gh.get_pr_reviews(pr_number)
-                if reviews:
-                    latest_state = reviews[-1].get("state", "")
-                    if latest_state == "CHANGES_REQUESTED":
-                        needs_fix = True
-            except Exception as e:
-                logger.debug("Could not fetch PR reviews for #%d: %s", pr_number, e)
-
-            # (b) Check comment body for the review verdict marker
-            if not needs_fix:
-                # Find the latest review comment
-                for c in reversed(comments):
-                    body = c.get("body", "")
-                    if "🤖 自动化 PR 审查报告" in body:
-                        if "请修复后重新提交" in body or "AI 审查发现需要修改" in body:
-                            needs_fix = True
-                        break  # only check the latest review comment
-
-            if needs_fix:
-                # Check if a fix was already attempted after the review
-                review_idx = None
-                for i, c in enumerate(comments):
-                    if "🤖 自动化 PR 审查报告" in c.get("body", ""):
-                        review_idx = i
-                fix_already_attempted = False
-                if review_idx is not None:
-                    # Look for fix comment after the review comment
-                    for c in comments[review_idx + 1 :]:
-                        body = c.get("body", "")
-                        if "自动修复已提交" in body or "跳过自动修复" in body:
-                            fix_already_attempted = True
-                            break
-
-                if not fix_already_attempted:
-                    result["pending_fixes"].append(pr_number)
-                    if not dry_run:
-                        try:
-                            fix_result = self.fix_pr(pr_number, gh=gh)
-                            result["actions_taken"].append(
-                                {
-                                    "pr": pr_number,
-                                    "action": "fixed",
-                                    "pushed": fix_result.get("pushed", False),
-                                }
-                            )
-                        except Exception as e:
-                            logger.warning("Failed to auto-fix PR #%d: %s", pr_number, e)
+                        logger.warning("Failed to auto-fix PR #%d: %s", pr_number, e)
 
         # Summary
         result["summary"] = {
@@ -654,6 +603,124 @@ class Orchestrator:
         }
 
         return result
+
+    def _analyze_status(
+        self,
+        title: str,
+        body: str,
+        comments: list[dict[str, Any]],
+        labels: list[str],
+    ) -> dict[str, Any]:
+        """Determine issue/PR status using LLM, with keyword fallback.
+
+        Tries LLM analysis first.  If LLM is not configured or returns
+        low-confidence / unknown, falls back to deterministic heuristics.
+        """
+        comment_dicts = [
+            {
+                "author": c.get("user", {}).get("login", "unknown"),
+                "body": c.get("body", ""),
+                "created_at": c.get("created_at", ""),
+            }
+            for c in comments
+        ]
+
+        status = self._generator.analyze_pr_status(
+            title=title,
+            body=body,
+            comments=comment_dicts,
+            labels=labels,
+        )
+
+        # Trust LLM result when confidence is reasonable
+        confidence = status.get("confidence", 0)
+        if isinstance(confidence, (int, float)) and confidence >= 0.5:
+            return status
+
+        # Fallback: basic deterministic heuristics
+        logger.debug("LLM confidence too low (%.2f), using heuristic fallback", confidence)
+        return self._keyword_fallback(comments, labels)
+
+    @staticmethod
+    def _keyword_fallback(
+        comments: list[dict[str, Any]],
+        labels: list[str],
+    ) -> dict[str, Any]:
+        """Simple keyword heuristics — used when LLM is unavailable."""
+        bot_comments = [
+            c
+            for c in comments
+            if c.get("user", {}).get("login") == "github-actions[bot]"
+            or c.get("user", {}).get("type") == "Bot"
+        ]
+
+        has_discovered = any(
+            _stage_marker(Stage.DISCOVERED) in c.get("body", "") for c in bot_comments
+        )
+        has_pr = any(
+            "pull" in c.get("body", "").lower() and "/pull/" in c.get("body", "")
+            for c in bot_comments
+        )
+        has_approved = "approved" in labels
+
+        # Issue-level checks
+        if not has_discovered:
+            return {
+                "stage": "not_analyzed",
+                "needs_action": "analyze",
+                "confidence": 0.8,
+                "reasoning": "No analysis comment found (keyword fallback)",
+            }
+        if has_approved and not has_pr:
+            return {
+                "stage": "approved_pending_pr",
+                "needs_action": "process_approval",
+                "confidence": 0.8,
+                "reasoning": "Approved label present but no PR link (keyword fallback)",
+            }
+
+        # PR-level checks (review / fix)
+        has_review = any(
+            "\U0001f916" in c.get("body", "") or "审查报告" in c.get("body", "")
+            for c in bot_comments
+        )
+        if not has_review:
+            return {
+                "stage": "pr_created",
+                "needs_action": "review_pr",
+                "confidence": 0.8,
+                "reasoning": "No review comment found (keyword fallback)",
+            }
+
+        # Check if changes requested
+        needs_fix = False
+        for c in reversed(bot_comments):
+            b = c.get("body", "")
+            if "审查报告" in b or "\U0001f916" in b:
+                if "请修复" in b or "CHANGES_REQUESTED" in b or "需要修改" in b:
+                    needs_fix = True
+                break
+
+        if needs_fix:
+            # Check if fix already attempted
+            fix_done = any(
+                "修复已提交" in c.get("body", "") or "跳过" in c.get("body", "")
+                for c in bot_comments
+            )
+            if not fix_done:
+                return {
+                    "stage": "reviewed_changes_requested",
+                    "needs_action": "fix_pr",
+                    "confidence": 0.7,
+                    "reasoning": "Review requested changes, no fix yet (keyword fallback)",
+                }
+
+        return {
+            "stage": "unknown",
+            "needs_action": "none",
+            "confidence": 0.5,
+            "reasoning": "No pending action detected (keyword fallback)",
+        }
 
     # ===================================================================
     # Comment building

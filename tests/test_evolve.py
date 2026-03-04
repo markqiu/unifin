@@ -775,6 +775,155 @@ class TestScanPendingOrchestrator:
         assert hasattr(orch, "scan_pending_issues")
         assert callable(orch.scan_pending_issues)
 
+    def test_analyze_status_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert hasattr(orch, "_analyze_status")
+        assert callable(orch._analyze_status)
+
+    def test_keyword_fallback_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        assert hasattr(Orchestrator, "_keyword_fallback")
+        assert callable(Orchestrator._keyword_fallback)
+
+
+class TestAnalyzePrStatus:
+    """Tests for the LLM-based PR status analysis in CodeGenerator."""
+
+    def test_analyze_pr_status_method_exists(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        assert hasattr(gen, "analyze_pr_status")
+        assert callable(gen.analyze_pr_status)
+
+    def test_analyze_pr_status_returns_dict(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        result = gen.analyze_pr_status(
+            title="Test issue",
+            body="Some body",
+            comments=[],
+            labels=[],
+        )
+        assert isinstance(result, dict)
+
+    def test_analyze_pr_status_has_required_keys(self):
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        result = gen.analyze_pr_status(
+            title="Test",
+            body="body",
+            comments=[{"author": "user", "body": "hello", "created_at": "2025-01-01"}],
+            labels=["data-request"],
+        )
+        assert "stage" in result
+        assert "needs_action" in result
+
+    def test_analyze_pr_status_no_api_key(self):
+        """Without API key, returns unknown/none."""
+        from unifin.evolve.generator import CodeGenerator
+
+        gen = CodeGenerator()
+        result = gen.analyze_pr_status("t", "b", [], [])
+        assert result["stage"] == "unknown"
+        assert result["needs_action"] == "none"
+
+
+class TestKeywordFallback:
+    """Tests for the deterministic keyword fallback in scan_pending."""
+
+    def test_no_comments_returns_analyze(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        result = Orchestrator._keyword_fallback(comments=[], labels=[])
+        assert result["needs_action"] == "analyze"
+        assert result["stage"] == "not_analyzed"
+
+    def test_discovered_marker_with_approved_no_pr(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        comments = [
+            {"user": {"login": "github-actions[bot]", "type": "Bot"}, "body": marker},
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=["approved"])
+        assert result["needs_action"] == "process_approval"
+
+    def test_no_review_returns_review_pr(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        # Has discovered + has PR link, so not pending analysis or approval
+        comments = [
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": marker + "\n[PR](/pull/9)",
+            },
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=[])
+        assert result["needs_action"] == "review_pr"
+
+    def test_review_with_changes_requested(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        comments = [
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": marker + "\n/pull/9",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "🤖 审查报告\n请修复后重新提交",
+            },
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=[])
+        assert result["needs_action"] == "fix_pr"
+
+    def test_review_with_fix_already_done(self):
+        from unifin.evolve.orchestrator import Orchestrator
+        from unifin.evolve.schema import Stage
+
+        marker = f"<!-- unifin-evolve-stage:{Stage.DISCOVERED.value} -->"
+        comments = [
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": marker + "\n/pull/9",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "🤖 审查报告\n请修复后重新提交",
+            },
+            {
+                "user": {"login": "github-actions[bot]", "type": "Bot"},
+                "body": "自动修复已提交",
+            },
+        ]
+        result = Orchestrator._keyword_fallback(comments=comments, labels=[])
+        assert result["needs_action"] == "none"
+
+    def test_fallback_returns_confidence(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        result = Orchestrator._keyword_fallback(comments=[], labels=[])
+        assert "confidence" in result
+        assert isinstance(result["confidence"], float)
+
+    def test_fallback_returns_reasoning(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        result = Orchestrator._keyword_fallback(comments=[], labels=[])
+        assert "reasoning" in result
+        assert "keyword fallback" in result["reasoning"]
+
 
 class TestGitHubClientListMethods:
     """Tests for list_issues and list_pull_requests methods."""

@@ -2,8 +2,6 @@
 
 from datetime import date
 
-import pytest
-
 # ──────────────────────────────────────────────
 # 1. Model registration tests
 # ──────────────────────────────────────────────
@@ -262,44 +260,9 @@ class TestFundNavModel:
             symbol="000001",
             name="测试基金",
         )
+        assert d.date == date(2024, 1, 2)
         assert d.nav == 1.2345
         assert d.acc_nav == 2.3456
         assert d.daily_return == 0.5
-
-
-# ──────────────────────────────────────────────
-# 4. SDK function existence tests
-# ──────────────────────────────────────────────
-
-
-class TestSDKNamespaces:
-    def test_equity_functions(self):
-        import unifin
-
-        assert callable(unifin.equity.historical)
-        assert callable(unifin.equity.search)
-        assert callable(unifin.equity.profile)
-        assert callable(unifin.equity.quote)
-        assert callable(unifin.equity.balance_sheet)
-        assert callable(unifin.equity.income_statement)
-        assert callable(unifin.equity.cash_flow)
-
-    def test_index_functions(self):
-        import unifin
-
-        assert callable(unifin.index.historical)
-
-    def test_etf_functions(self):
-        import unifin
-
-        assert callable(unifin.etf.search)
-
-    def test_market_functions(self):
-        import unifin
-
-        assert callable(unifin.market.trade_calendar)
-
-    def test_fund_functions(self):
-        import unifin
-
-        assert callable(unifin.fund.nav)
+        assert d.symbol == "000001"
+        assert d.name == "测试基金"

@@ -42,7 +42,6 @@ class FundNavData(BaseModel):
     """Result schema for 开放式基金净值数据."""
 
     date: dt.date = Field(
-        default=...,
         description="净值日期",
     )
     nav: float | None = Field(

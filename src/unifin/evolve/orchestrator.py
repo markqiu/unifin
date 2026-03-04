@@ -604,15 +604,23 @@ class Orchestrator:
             # Chronological override: determine action from comment order
             # This is more reliable than LLM for fix/review cycle decisions
             last_action = self._detect_last_action(comments)
-            if last_action == "review":
-                # Latest comment is a review → next step is fix
+            if last_action == "review_request_changes":
+                # Latest comment is a review requesting changes → next step is fix
                 if action != "fix_pr":
                     logger.info(
-                        "PR #%d: overriding action %s → fix_pr (latest comment is a review)",
+                        "PR #%d: overriding action %s → fix_pr "
+                        "(latest review requests changes)",
                         pr_number,
                         action,
                     )
                     action = "fix_pr"
+            elif last_action == "review_approve":
+                # Latest review approved the PR → no more action needed
+                logger.info(
+                    "PR #%d: latest review approved — no further action needed",
+                    pr_number,
+                )
+                action = "none"
             elif last_action in ("fix", "skip"):
                 # Latest comment is a fix → next step is review
                 if action != "review_pr":
@@ -1038,13 +1046,17 @@ class Orchestrator:
     def _detect_last_action(comments: list[dict[str, Any]]) -> str:
         """Determine whether the most recent bot action was a review or fix.
 
-        Returns "review", "fix", or "none".
+        Returns "review_approve", "review_request_changes", "fix", "skip", or "none".
+        A review that says "建议合并" is an approve; otherwise request-changes.
         """
         last_action = "none"
         for c in comments:
             body = c.get("body", "")
             if "审查报告" in body:
-                last_action = "review"
+                if "建议合并" in body:
+                    last_action = "review_approve"
+                else:
+                    last_action = "review_request_changes"
             elif "修复已提交" in body or "自动修复未发现" in body:
                 last_action = "fix"
             elif "跳过自动修复" in body:

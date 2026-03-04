@@ -6,26 +6,6 @@ No authentication required.
 
 from unifin.core.registry import ProviderInfo, provider_registry
 
-# Import fetchers to trigger registration
-from unifin.providers.akshare import (  # noqa: F401, E402
-    equity_historical as _eh,
-)
-from unifin.providers.akshare import (
-    equity_quote as _eq,
-)
-from unifin.providers.akshare import (
-    equity_search as _es,
-)
-from unifin.providers.akshare import (
-    etf_search as _etf,
-)
-from unifin.providers.akshare import (
-    fund_nav,  # auto-evolved
-)
-from unifin.providers.akshare import (
-    trade_calendar as _tc,
-)
-
 provider_registry.register_provider(
     ProviderInfo(
         name="akshare",
@@ -44,3 +24,11 @@ provider_registry.register_provider(
         ),
     )
 )
+
+# Import fetchers to trigger registration
+from unifin.providers.akshare import equity_historical as _eh  # noqa: F401, E402
+from unifin.providers.akshare import equity_quote as _eq  # noqa: F401, E402
+from unifin.providers.akshare import equity_search as _es  # noqa: F401, E402
+from unifin.providers.akshare import etf_search as _etf  # noqa: F401, E402
+from unifin.providers.akshare import fund_nav as _fn  # noqa: F401, E402
+from unifin.providers.akshare import trade_calendar as _tc  # noqa: F401, E402

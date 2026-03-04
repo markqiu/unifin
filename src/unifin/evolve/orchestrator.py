@@ -1029,7 +1029,7 @@ class Orchestrator:
             body = c.get("body", "")
             if "审查报告" in body:
                 last_action = "review"
-            elif "修复已提交" in body:
+            elif "修复已提交" in body or "自动修复未发现" in body:
                 last_action = "fix"
             elif "跳过自动修复" in body:
                 last_action = "skip"
@@ -1046,7 +1046,7 @@ class Orchestrator:
         last_review_idx = -1
         for i, c in enumerate(comments):
             body = c.get("body", "")
-            if "修复已提交" in body or "跳过自动修复" in body:
+            if "修复已提交" in body or "跳过自动修复" in body or "自动修复未发现" in body:
                 last_fix_idx = i
             if "审查报告" in body:
                 last_review_idx = i

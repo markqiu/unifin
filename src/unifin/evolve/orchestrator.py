@@ -545,6 +545,20 @@ class Orchestrator:
                 output = output[-2000:]
                 output = "...(truncated)\n" + output
             parts.append(f"```\n{output}\n```")
+        # Include failure details when tests fail
+        if not test_result["success"]:
+            output = test_result.get("output", "")
+            failed_lines = [
+                line.strip()
+                for line in output.splitlines()
+                if "FAILED" in line or "ERROR" in line or "AssertionError" in line
+            ]
+            if failed_lines:
+                parts.append("\n失败详情:")
+                parts.append("```")
+                for line in failed_lines[:20]:
+                    parts.append(line)
+                parts.append("```")
         parts.append("")
 
         # Lint results

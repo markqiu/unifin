@@ -9,10 +9,20 @@ from unifin.core.registry import ProviderInfo, provider_registry
 # Import fetchers to trigger registration
 from unifin.providers.akshare import (  # noqa: F401, E402
     equity_historical as _eh,
+)
+from unifin.providers.akshare import (
     equity_quote as _eq,
+)
+from unifin.providers.akshare import (
     equity_search as _es,
+)
+from unifin.providers.akshare import (
     etf_search as _etf,
+)
+from unifin.providers.akshare import (
     fund_nav,  # auto-evolved
+)
+from unifin.providers.akshare import (
     trade_calendar as _tc,
 )
 

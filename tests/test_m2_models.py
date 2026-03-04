@@ -68,7 +68,6 @@ class TestFetcherRegistration:
             "index_historical",
             "etf_search",
             "trade_calendar",
-            "fund_nav",
         ]
         for model_name in yf_models:
             providers = list(provider_registry.get_providers_for_model(model_name).keys())

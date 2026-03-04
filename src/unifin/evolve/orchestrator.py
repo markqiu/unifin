@@ -603,10 +603,7 @@ class Orchestrator:
             # Chronological override: determine action from comment order
             # This is more reliable than LLM for fix/review cycle decisions
             last_action = self._detect_last_action(comments)
-            if last_action == "review" and stage in (
-                "fix_attempted",
-                "reviewed_changes_requested",
-            ):
+            if last_action == "review":
                 # Latest comment is a review → next step is fix
                 if action != "fix_pr":
                     logger.info(
@@ -615,10 +612,7 @@ class Orchestrator:
                         action,
                     )
                     action = "fix_pr"
-            elif last_action in ("fix", "skip") and stage in (
-                "fix_attempted",
-                "reviewed_changes_requested",
-            ):
+            elif last_action in ("fix", "skip"):
                 # Latest comment is a fix → next step is review
                 if action != "review_pr":
                     logger.info(

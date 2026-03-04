@@ -459,6 +459,142 @@ class Orchestrator:
         return result
 
     # ===================================================================
+    # Passive scanning (backup for missed events)
+    # ===================================================================
+
+    def scan_pending_issues(
+        self,
+        gh: GitHubClient | None = None,
+        *,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Scan all data-request issues and PRs for pending tasks.
+
+        This is a passive scanning mechanism to complement event-driven triggers.
+        It handles cases where:
+        - System was offline when events occurred
+        - Webhook delivery failed
+        - Previous processing failed
+
+        Scans for:
+        1. Issues with `data-request` but without `approved` label that haven't
+           been analyzed yet (no bot comment with DISCOVERED stage marker)
+        2. Issues with `approved` label that don't have a PR yet
+        3. Open PRs from evolve/* branches that haven't been reviewed
+
+        Parameters
+        ----------
+        dry_run : bool
+            If True, only report what would be done without taking action.
+
+        Returns
+        -------
+        dict with counts and actions taken.
+        """
+        gh = gh or GitHubClient()
+        result: dict[str, Any] = {
+            "scanned": True,
+            "dry_run": dry_run,
+            "pending_analysis": [],
+            "pending_approval_processing": [],
+            "pending_reviews": [],
+            "actions_taken": [],
+        }
+
+        # 1. Find data-request issues
+        issues = gh.list_issues(state="open", labels="data-request")
+        logger.info("Found %d open data-request issues", len(issues))
+
+        for issue in issues:
+            issue_number = issue["number"]
+            labels = [lb["name"] for lb in issue.get("labels", [])]
+            has_approved = "approved" in labels
+
+            # Find bot comments to detect current stage
+            comments = gh.get_issue_comments(issue_number)
+            bot_comments = [
+                c
+                for c in comments
+                if c.get("user", {}).get("login") == "github-actions[bot]"
+                or c.get("user", {}).get("type") == "Bot"
+            ]
+
+            # Check if already analyzed (has DISCOVERED marker)
+            has_discovered = any(
+                _stage_marker(Stage.DISCOVERED) in c.get("body", "") for c in bot_comments
+            )
+
+            # Check if PR exists (look for PR link in comments)
+            has_pr = any(
+                "pull" in c.get("body", "").lower() and "/pull/" in c.get("body", "")
+                for c in bot_comments
+            )
+
+            # Determine pending state
+            if not has_discovered:
+                # Issue not yet analyzed
+                result["pending_analysis"].append(issue_number)
+                if not dry_run:
+                    try:
+                        self.process_new_issue(issue_number)
+                        result["actions_taken"].append(
+                            {"issue": issue_number, "action": "analyzed"}
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to analyze issue #%d: %s", issue_number, e)
+
+            elif has_approved and not has_pr:
+                # Approved but no PR yet
+                result["pending_approval_processing"].append(issue_number)
+                if not dry_run:
+                    try:
+                        approval_result = self.process_approval(issue_number)
+                        result["actions_taken"].append(
+                            {
+                                "issue": issue_number,
+                                "action": "processed_approval",
+                                "pr_number": approval_result.get("pr_number"),
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to process approval #%d: %s", issue_number, e)
+
+        # 2. Find open PRs from evolve/* branches
+        prs = gh.list_pull_requests(state="open")
+        evolve_prs = [pr for pr in prs if pr.get("head", {}).get("ref", "").startswith("evolve/")]
+
+        for pr in evolve_prs:
+            pr_number = pr["number"]
+
+            # Check if already reviewed (has review comment from bot)
+            comments = gh.get_issue_comments(pr_number)
+            has_review = any("🤖 自动化 PR 审查报告" in c.get("body", "") for c in comments)
+
+            if not has_review:
+                result["pending_reviews"].append(pr_number)
+                if not dry_run:
+                    try:
+                        self.review_pr(pr_number)
+                        result["actions_taken"].append(
+                            {
+                                "pr": pr_number,
+                                "action": "reviewed",
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to review PR #%d: %s", pr_number, e)
+
+        # Summary
+        result["summary"] = {
+            "pending_analysis_count": len(result["pending_analysis"]),
+            "pending_approval_count": len(result["pending_approval_processing"]),
+            "pending_review_count": len(result["pending_reviews"]),
+            "actions_taken_count": len(result["actions_taken"]),
+        }
+
+        return result
+
+    # ===================================================================
     # Comment building
     # ===================================================================
 

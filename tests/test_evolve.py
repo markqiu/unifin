@@ -758,3 +758,61 @@ class TestCLIFixPR:
         parser = build_parser()
         with pytest.raises(SystemExit):
             parser.parse_args(["fix-pr"])
+
+
+# ──────────────────────────────────────────────
+# Scan pending feature tests
+# ──────────────────────────────────────────────
+
+
+class TestScanPendingOrchestrator:
+    """Tests for the scan_pending_issues orchestrator method."""
+
+    def test_scan_pending_method_exists(self):
+        from unifin.evolve.orchestrator import Orchestrator
+
+        orch = Orchestrator()
+        assert hasattr(orch, "scan_pending_issues")
+        assert callable(orch.scan_pending_issues)
+
+
+class TestGitHubClientListMethods:
+    """Tests for list_issues and list_pull_requests methods."""
+
+    def test_list_issues_method_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        assert hasattr(GitHubClient, "list_issues")
+        assert callable(GitHubClient.list_issues)
+
+    def test_list_pull_requests_method_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        assert hasattr(GitHubClient, "list_pull_requests")
+        assert callable(GitHubClient.list_pull_requests)
+
+
+class TestCLIScanPending:
+    """Tests for the scan-pending CLI command."""
+
+    def test_parse_scan_pending(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["scan-pending"])
+        assert args.command == "scan-pending"
+        assert args.dry_run is False
+
+    def test_parse_scan_pending_dry_run(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["scan-pending", "--dry-run"])
+        assert args.dry_run is True
+
+    def test_scan_pending_command_registered(self):
+        from unifin.evolve.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["scan-pending"])
+        assert hasattr(args, "func")

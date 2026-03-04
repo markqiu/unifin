@@ -498,6 +498,7 @@ class Orchestrator:
             "pending_analysis": [],
             "pending_approval_processing": [],
             "pending_reviews": [],
+            "pending_fixes": [],
             "actions_taken": [],
         }
 
@@ -583,12 +584,36 @@ class Orchestrator:
                         )
                     except Exception as e:
                         logger.warning("Failed to review PR #%d: %s", pr_number, e)
+                continue
+
+            # Already reviewed: check if latest review requests changes
+            try:
+                reviews = gh.get_pr_reviews(pr_number)
+                if reviews:
+                    latest_state = reviews[-1].get("state", "")
+                    if latest_state == "CHANGES_REQUESTED":
+                        result["pending_fixes"].append(pr_number)
+                        if not dry_run:
+                            try:
+                                fix_result = self.fix_pr(pr_number, gh=gh)
+                                result["actions_taken"].append(
+                                    {
+                                        "pr": pr_number,
+                                        "action": "fixed",
+                                        "pushed": fix_result.get("pushed", False),
+                                    }
+                                )
+                            except Exception as e:
+                                logger.warning("Failed to auto-fix PR #%d: %s", pr_number, e)
+            except Exception as e:
+                logger.warning("Failed to inspect PR reviews for #%d: %s", pr_number, e)
 
         # Summary
         result["summary"] = {
             "pending_analysis_count": len(result["pending_analysis"]),
             "pending_approval_count": len(result["pending_approval_processing"]),
             "pending_review_count": len(result["pending_reviews"]),
+            "pending_fix_count": len(result["pending_fixes"]),
             "actions_taken_count": len(result["actions_taken"]),
         }
 

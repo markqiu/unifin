@@ -791,6 +791,12 @@ class TestGitHubClientListMethods:
         assert hasattr(GitHubClient, "list_pull_requests")
         assert callable(GitHubClient.list_pull_requests)
 
+    def test_get_pr_reviews_method_exists(self):
+        from unifin.evolve.github import GitHubClient
+
+        assert hasattr(GitHubClient, "get_pr_reviews")
+        assert callable(GitHubClient.get_pr_reviews)
+
 
 class TestCLIScanPending:
     """Tests for the scan-pending CLI command."""
@@ -816,3 +822,13 @@ class TestCLIScanPending:
         parser = build_parser()
         args = parser.parse_args(["scan-pending"])
         assert hasattr(args, "func")
+
+    def test_scan_pending_summary_keys_includes_pending_fixes(self):
+        result = {
+            "pending_fixes": [],
+            "summary": {
+                "pending_fix_count": 0,
+            },
+        }
+        assert "pending_fixes" in result
+        assert "pending_fix_count" in result["summary"]

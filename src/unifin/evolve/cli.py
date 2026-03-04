@@ -157,6 +157,7 @@ def cmd_scan_pending(args: argparse.Namespace) -> None:
                 "pending_analysis": result.get("pending_analysis", []),
                 "pending_approval_processing": result.get("pending_approval_processing", []),
                 "pending_reviews": result.get("pending_reviews", []),
+                "pending_fixes": result.get("pending_fixes", []),
                 "summary": result.get("summary", {}),
                 "actions_taken": result.get("actions_taken", []),
             },

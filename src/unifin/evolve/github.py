@@ -392,6 +392,13 @@ class GitHubClient:
         resp.raise_for_status()
         return resp.text
 
+    def get_pr_reviews(self, pr_number: int) -> list[dict[str, Any]]:
+        """Fetch all reviews on a pull request."""
+        url = f"{self._base}/repos/{self._repo}/pulls/{pr_number}/reviews"
+        resp = httpx.get(url, headers=self._headers, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+
     def post_pr_comment(self, pr_number: int, body: str) -> dict[str, Any]:
         """Post a comment on a pull request (issue comment endpoint)."""
         # PRs use the issue comments endpoint for general comments

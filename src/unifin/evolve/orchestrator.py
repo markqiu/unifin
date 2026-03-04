@@ -597,14 +597,30 @@ class Orchestrator:
             action = status.get("needs_action", "none")
             stage = status.get("stage", "unknown")
 
-            # Override: fix_attempted always needs re-review
-            if stage == "fix_attempted" and action != "review_pr":
-                logger.info(
-                    "PR #%d: overriding action %s → review_pr for fix_attempted stage",
-                    pr_number,
-                    action,
-                )
-                action = "review_pr"
+            # Chronological override: determine action from comment order
+            # This is more reliable than LLM for fix/review cycle decisions
+            last_action = self._detect_last_action(comments)
+            if last_action == "review" and stage in (
+                "fix_attempted",
+                "reviewed_changes_requested",
+            ):
+                # Latest comment is a review → next step is fix
+                if action != "fix_pr":
+                    logger.info(
+                        "PR #%d: overriding action %s → fix_pr (latest comment is a review)",
+                        pr_number,
+                        action,
+                    )
+                    action = "fix_pr"
+            elif last_action == "fix" and stage == "fix_attempted":
+                # Latest comment is a fix → next step is review
+                if action != "review_pr":
+                    logger.info(
+                        "PR #%d: overriding action %s → review_pr (latest comment is a fix)",
+                        pr_number,
+                        action,
+                    )
+                    action = "review_pr"
 
             logger.info(
                 "PR #%d: stage=%s, action=%s (confidence=%.2f, reason=%s)",
@@ -1001,6 +1017,23 @@ class Orchestrator:
     # ===================================================================
     # Internal helpers
     # ===================================================================
+
+    @staticmethod
+    def _detect_last_action(comments: list[dict[str, Any]]) -> str:
+        """Determine whether the most recent bot action was a review or fix.
+
+        Returns "review", "fix", or "none".
+        """
+        last_action = "none"
+        for c in comments:
+            body = c.get("body", "")
+            if "审查报告" in body:
+                last_action = "review"
+            elif "修复已提交" in body:
+                last_action = "fix"
+            elif "跳过自动修复" in body:
+                last_action = "skip"
+        return last_action
 
     @staticmethod
     def _has_new_review_after_fix(comments: list[dict[str, Any]]) -> bool:

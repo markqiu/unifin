@@ -585,10 +585,21 @@ class Orchestrator:
                 labels=[lb["name"] for lb in pr.get("labels", [])],
             )
             action = status.get("needs_action", "none")
+            stage = status.get("stage", "unknown")
+
+            # Override: fix_attempted always needs re-review
+            if stage == "fix_attempted" and action != "review_pr":
+                logger.info(
+                    "PR #%d: overriding action %s → review_pr for fix_attempted stage",
+                    pr_number,
+                    action,
+                )
+                action = "review_pr"
+
             logger.info(
                 "PR #%d: stage=%s, action=%s (confidence=%.2f, reason=%s)",
                 pr_number,
-                status.get("stage"),
+                stage,
                 action,
                 status.get("confidence", 0),
                 status.get("reasoning", ""),

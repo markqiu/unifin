@@ -665,7 +665,7 @@ class TestFixCodeGenerator:
         from unifin.evolve.generator import CodeGenerator
 
         gen = CodeGenerator()
-        gen._api_key = None
+        gen._llm._api_key = None
         with pytest.raises(RuntimeError, match="LLM API key is required"):
             gen.fix_code("review body", {"file.py": "code"})
 
@@ -866,6 +866,7 @@ class TestAnalyzePrStatus:
         from unifin.evolve.generator import CodeGenerator
 
         gen = CodeGenerator()
+        gen._llm._api_key = None
         result = gen.analyze_pr_status("t", "b", [], [])
         assert result["stage"] == "unknown"
         assert result["needs_action"] == "none"

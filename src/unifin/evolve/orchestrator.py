@@ -608,8 +608,7 @@ class Orchestrator:
                 # Latest comment is a review requesting changes → next step is fix
                 if action != "fix_pr":
                     logger.info(
-                        "PR #%d: overriding action %s → fix_pr "
-                        "(latest review requests changes)",
+                        "PR #%d: overriding action %s → fix_pr (latest review requests changes)",
                         pr_number,
                         action,
                     )

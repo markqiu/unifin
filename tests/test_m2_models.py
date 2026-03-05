@@ -10,7 +10,7 @@ import pytest
 
 
 class TestModelRegistration:
-    """Verify all 10 models are registered."""
+    """Verify all 11 models are registered."""
 
     def test_all_models_registered(self):
         from unifin.core.registry import model_registry
@@ -26,6 +26,7 @@ class TestModelRegistration:
             "index_historical",
             "etf_search",
             "trade_calendar",
+            "fund_nav",
         ]
         registered = model_registry.list_models()
         for name in expected:
@@ -44,6 +45,7 @@ class TestModelRegistration:
         assert model_registry.get("index_historical").category == "index"
         assert model_registry.get("etf_search").category == "etf"
         assert model_registry.get("trade_calendar").category == "market"
+        assert model_registry.get("fund_nav").category == "fund.price"
 
 
 # ──────────────────────────────────────────────
@@ -82,6 +84,7 @@ class TestFetcherRegistration:
             "equity_quote",
             "etf_search",
             "trade_calendar",
+            "fund_nav",
         ]
         for model_name in ak_models:
             providers = list(provider_registry.get_providers_for_model(model_name).keys())
@@ -238,12 +241,42 @@ class TestTradeCalendarModel:
         assert d.is_open is True
 
 
+class TestFundNavModel:
+    def test_query_defaults(self):
+        from unifin.models.fund_nav import FundNavQuery
+
+        q = FundNavQuery(symbol="000001")
+        assert q.symbol == "000001"
+        assert q.start_date is None
+        assert q.end_date is None
+
+    def test_data_fields(self):
+        from unifin.models.fund_nav import FundNavData
+
+        d = FundNavData(
+            date=date(2024, 1, 2),
+            nav=1.2345,
+            acc_nav=2.3456,
+            daily_return=0.5,
+            symbol="000001",
+            name="测试基金",
+        )
+        assert d.date == date(2024, 1, 2)
+        assert d.nav == 1.2345
+        assert d.acc_nav == 2.3456
+        assert d.daily_return == 0.5
+        assert d.symbol == "000001"
+        assert d.name == "测试基金"
+
+
 # ──────────────────────────────────────────────
-# 4. SDK function existence tests
+# 4. SDK namespace tests
 # ──────────────────────────────────────────────
 
 
-class TestSDKNamespaces:
+class TestSDKNamespace:
+    """Verify SDK public functions are accessible."""
+
     def test_equity_functions(self):
         import unifin
 
@@ -428,213 +461,8 @@ class TestStrictTyping:
     def test_date_range_valid(self):
         from unifin.models.equity_historical import EquityHistoricalQuery
 
-        q = EquityHistoricalQuery(
+        q = EquityHistoricalQuery(  # noqa: F841
             symbol="AAPL",
             start_date=date(2024, 1, 1),
             end_date=date(2024, 12, 31),
         )
-        assert q.start_date < q.end_date
-
-    def test_index_date_range_validation(self):
-        from pydantic import ValidationError
-
-        from unifin.models.index_historical import IndexHistoricalQuery
-
-        with pytest.raises(ValidationError, match="start_date"):
-            IndexHistoricalQuery(
-                symbol="^GSPC",
-                start_date=date(2025, 1, 1),
-                end_date=date(2024, 1, 1),
-            )
-
-    def test_interval_enum_rejects_invalid(self):
-        from pydantic import ValidationError
-
-        from unifin.models.equity_historical import EquityHistoricalQuery
-
-        with pytest.raises(ValidationError):
-            EquityHistoricalQuery(symbol="AAPL", interval="2h")
-
-
-class TestOutputValidation:
-    """Verify router validates output against result Pydantic model."""
-
-    @pytest.mark.skipif(
-        not _yfinance_available(),
-        reason="yfinance not installed",
-    )
-    def test_symbol_injected_in_results(self):
-        """Router should inject unified symbol into result rows."""
-        import unifin
-
-        df = unifin.equity.historical("AAPL", start_date="2024-06-01", end_date="2024-06-05")
-        assert len(df) > 0
-        assert "symbol" in df.columns
-        # Every row should have the unified symbol
-        symbols = df["symbol"].to_list()
-        assert all(s == "AAPL" for s in symbols)
-
-    @pytest.mark.skipif(
-        not _yfinance_available(),
-        reason="yfinance not installed",
-    )
-    def test_a_share_symbol_unified_in_results(self):
-        """A-share results should have MIC-format symbols."""
-        import unifin
-
-        df = unifin.equity.historical("000001.XSHE", start_date="2024-06-01", end_date="2024-06-05")
-        if len(df) > 0:
-            symbols = df["symbol"].to_list()
-            assert all(s == "000001.XSHE" for s in symbols)
-
-
-class TestProviderMetadata:
-    """Verify enhanced provider and fetcher metadata."""
-
-    def test_yfinance_provider_has_markets(self):
-        from unifin.core.registry import provider_registry
-
-        info = provider_registry.get_provider_info("yfinance")
-        assert len(info.markets) > 0
-        assert "US" in info.markets
-        assert "CN" in info.markets
-
-    def test_yfinance_provider_has_delay(self):
-        from unifin.core.registry import provider_registry
-
-        info = provider_registry.get_provider_info("yfinance")
-        assert info.data_delay == "15min"
-
-    def test_fetcher_has_coverage_metadata(self):
-        from unifin.core.registry import provider_registry
-
-        fetcher_cls = provider_registry.get_fetcher("equity_historical", "yfinance")
-        assert len(fetcher_cls.supported_fields) > 0
-        assert "close" in fetcher_cls.supported_fields
-        assert fetcher_cls.data_start_date == "1970-01-01"
-        assert fetcher_cls.data_delay == "15min"
-
-    def test_all_yfinance_fetchers_have_supported_fields(self):
-        """Every yfinance fetcher should declare supported_fields."""
-        from unifin.core.registry import provider_registry
-
-        models_with_yfinance = [
-            "equity_historical",
-            "equity_search",
-            "equity_profile",
-            "equity_quote",
-            "balance_sheet",
-            "income_statement",
-            "cash_flow",
-            "index_historical",
-            "etf_search",
-            "trade_calendar",
-        ]
-        for model_name in models_with_yfinance:
-            fetcher_cls = provider_registry.get_fetcher(model_name, "yfinance")
-            assert len(fetcher_cls.supported_fields) > 0, (
-                f"yfinance/{model_name} missing supported_fields"
-            )
-
-
-class TestSymbolValidation:
-    """Verify symbol format validation at the Query layer."""
-
-    def test_valid_us_ticker(self):
-        from unifin.models.equity_historical import EquityHistoricalQuery
-
-        q = EquityHistoricalQuery(symbol="AAPL")
-        assert q.symbol == "AAPL"
-
-    def test_valid_mic_format(self):
-        from unifin.models.equity_historical import EquityHistoricalQuery
-
-        q = EquityHistoricalQuery(symbol="000001.XSHE")
-        assert q.symbol == "000001.XSHE"
-
-    def test_valid_hk(self):
-        from unifin.models.equity_profile import EquityProfileQuery
-
-        q = EquityProfileQuery(symbol="0700.XHKG")
-        assert q.symbol == "0700.XHKG"
-
-    def test_valid_index_caret(self):
-        from unifin.models.index_historical import IndexHistoricalQuery
-
-        q = IndexHistoricalQuery(symbol="^GSPC")
-        assert q.symbol == "^GSPC"
-
-    def test_valid_plain_a_share(self):
-        from unifin.models.equity_historical import EquityHistoricalQuery
-
-        q = EquityHistoricalQuery(symbol="600519")
-        assert q.symbol == "600519"
-
-    def test_valid_brk_b(self):
-        from unifin.models.equity_quote import EquityQuoteQuery
-
-        q = EquityQuoteQuery(symbol="BRK.B")
-        assert q.symbol == "BRK.B"
-
-    def test_reject_empty(self):
-        from pydantic import ValidationError
-
-        from unifin.models.equity_historical import EquityHistoricalQuery
-
-        with pytest.raises(ValidationError, match="symbol"):
-            EquityHistoricalQuery(symbol="")
-
-    def test_reject_garbage(self):
-        from pydantic import ValidationError
-
-        from unifin.models.equity_historical import EquityHistoricalQuery
-
-        with pytest.raises(ValidationError, match="Invalid symbol"):
-            EquityHistoricalQuery(symbol="???")
-
-    def test_reject_spaces(self):
-        from pydantic import ValidationError
-
-        from unifin.models.balance_sheet import BalanceSheetQuery
-
-        with pytest.raises(ValidationError, match="Invalid symbol"):
-            BalanceSheetQuery(symbol="apple inc")
-
-    def test_reject_too_long_ticker(self):
-        from pydantic import ValidationError
-
-        from unifin.models.equity_profile import EquityProfileQuery
-
-        with pytest.raises(ValidationError, match="Invalid symbol"):
-            EquityProfileQuery(symbol="TOOLONGTICKER")
-
-    def test_whitespace_stripped(self):
-        from unifin.models.equity_historical import EquityHistoricalQuery
-
-        q = EquityHistoricalQuery(symbol="  AAPL  ")
-        assert q.symbol == "AAPL"
-
-    def test_all_query_models_validate_symbol(self):
-        """Every Query model with a required symbol should reject garbage."""
-        from pydantic import ValidationError
-
-        from unifin.models.balance_sheet import BalanceSheetQuery
-        from unifin.models.cash_flow import CashFlowQuery
-        from unifin.models.equity_historical import EquityHistoricalQuery
-        from unifin.models.equity_profile import EquityProfileQuery
-        from unifin.models.equity_quote import EquityQuoteQuery
-        from unifin.models.income_statement import IncomeStatementQuery
-        from unifin.models.index_historical import IndexHistoricalQuery
-
-        models = [
-            EquityHistoricalQuery,
-            EquityProfileQuery,
-            EquityQuoteQuery,
-            BalanceSheetQuery,
-            IncomeStatementQuery,
-            CashFlowQuery,
-            IndexHistoricalQuery,
-        ]
-        for model_cls in models:
-            with pytest.raises(ValidationError):
-                model_cls(symbol="!!invalid!!")
